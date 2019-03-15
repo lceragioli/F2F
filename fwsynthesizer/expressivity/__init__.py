@@ -805,6 +805,10 @@ def print_prot_range(range):
     if range[0] == range[1]:
         if range[0] == 17:
             return "udp"
+        elif range[0] == 6:
+            return "tcp"
+        elif range[0] == 1:
+            return "icmp"
         else:
             return print_prot(range[0])
     elif range[0] == 0 and range[1] == 255:
