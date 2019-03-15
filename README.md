@@ -24,11 +24,11 @@ The libraries and executables are installed in the `venv` python virtual environ
 source venv/bin/activate
 ```
 
-the executable is `fwp`.
+the executable is `f2f`.
 
 ### Usage
 ```
-usage: fwp SOURCE-SYSTEM INTERFACE-FILE CONFIGURATION-FILE TARGET-SYSTEM
+usage: f2f SOURCE-SYSTEM INTERFACE-FILE CONFIGURATION-FILE TARGET-SYSTEM
 
 positional arguments:
 
