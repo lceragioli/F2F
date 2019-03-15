@@ -1,10 +1,10 @@
  
 from distutils.core import setup
 
-setup(name = "fwp",
+setup(name = "f2f",
     version = "1.0",
-    description = "FireWall Sinthesizer: Language-independent Synthesis of Firewall Policies",
+    description = "Firewall-2-Firewall: Check portability between firewall systems",
     packages = ['fwsynthesizer', 'fwsynthesizer.parsers', 'fwsynthesizer.frontends', 'fwsynthesizer.expressivity'],
     package_data = {'fwsynthesizer' : ["diagrams/*"] },
-    scripts = ["fwp"],
+    scripts = ["f2f"],
 ) 
