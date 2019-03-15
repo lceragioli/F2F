@@ -17,6 +17,7 @@ sudo apt install z3 libz3-dev ghc cabal-install python-pip python-virtualenv
 Update cabal package list and make the virtual environment
 ```
 cabal update
+chmod +x setup.py update_libs.sh f2f
 make
 ```
 The libraries and executables are installed in the `venv` python virtual environment:
@@ -34,3 +35,4 @@ positional arguments:
 
 ### Usage Examples
 $ source venv/bin/activate
+$ ./f2f iptables interface-file config-file ipfw
