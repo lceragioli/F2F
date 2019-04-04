@@ -2,7 +2,7 @@
 
 SANDBOX = cabal.sandbox.config
 
-all: fws
+all: f2f
 
 venv:
 	virtualenv --python=python2 venv/; \
@@ -18,7 +18,7 @@ $(SANDBOX): FireWallSynthesizer.cabal venv
 	cabal sandbox add-source lib/HaPy-haskell
 	cabal install --dependencies-only
 
-fws: $(SANDBOX) src/*.hs src/FWS/*.hs
+f2f: $(SANDBOX) src/*.hs src/FWS/*.hs
 	cabal install
 
 repl: $(SANDBOX)
