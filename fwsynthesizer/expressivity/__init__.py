@@ -48,28 +48,42 @@ def local(pkt_Ip, t_Ip):
 def non_local(pkt_Ip, t_Ip):
     return (pkt_Ip == IP.NON_LOCAL and t_Ip == T_IP.ID) or t_Ip == T_IP.CONST_NON_LOCAL
 
-
+# Old control diagram version
+# ipfw_array_path = [
+#     # p1 = qi; q0; qf
+#     # p2 = qi; q1; qf
+#     # p3 = qi; q0; q1; qf
+#     # p4 = qi; q1; q0; qf
+#     ("p1", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
+#         (pkt_srcIp == IP.NON_LOCAL and tr_srcIp == T_IP.ID and tr_srcPort == T_port.ID and local(pkt_dstIp, tr_dstIp))
+#         or (pkt_srcIp == IP.NON_LOCAL and pkt_dstIp == IP.LOCAL and tr_dstIp == T_IP.ID and tr_dstPort == T_port.ID)),
+#     ("p2", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
+#         (pkt_srcIp == IP.LOCAL and tr_srcIp == T_IP.ID and tr_srcPort == T_port.ID and non_local(pkt_dstIp, tr_dstIp))
+#         or (pkt_srcIp == IP.LOCAL and pkt_dstIp == IP.NON_LOCAL and tr_dstIp == T_IP.ID and tr_dstPort == T_port.ID)),
+#     ("p3", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
+#         (pkt_srcIp == IP.NON_LOCAL and pkt_dstIp == T_IP.CONST_NON_LOCAL and tr_dstIp == T_IP.ID and tr_dstPort == T_port.ID)
+#         or (pkt_srcIp == IP.NON_LOCAL and pkt_dstIp == IP.NON_LOCAL and non_local(pkt_dstIp, tr_dstIp))
+#         or (pkt_srcIp == IP.NON_LOCAL and non_local(pkt_dstIp, tr_dstIp) and tr_srcIp == T_IP.ID and tr_srcPort == T_port.ID)
+#         or (pkt_srcIp == IP.NON_LOCAL and non_local(pkt_dstIp, tr_dstIp))),
+#     ("p4", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
+#         (pkt_srcIp == IP.LOCAL and pkt_dstIp == IP.LOCAL and tr_dstIp == T_IP.ID and tr_dstPort == T_port.ID)
+#         or (pkt_srcIp == IP.LOCAL and pkt_dstIp == IP.LOCAL and local(pkt_dstIp, tr_dstIp))
+#         or (pkt_srcIp == IP.LOCAL and local(pkt_dstIp, tr_dstIp) and tr_srcIp == T_IP.ID and tr_srcPort == T_port.ID)
+#         or (pkt_srcIp == IP.LOCAL and local(pkt_dstIp, tr_dstIp)))
+# ]
 ipfw_array_path = [
     # p1 = qi; q0; qf
     # p2 = qi; q1; qf
     # p3 = qi; q0; q1; qf
     # p4 = qi; q1; q0; qf
     ("p1", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-        (pkt_srcIp == IP.NON_LOCAL and tr_srcIp == T_IP.ID and tr_srcPort == T_port.ID and local(pkt_dstIp, tr_dstIp))
-        or (pkt_srcIp == IP.NON_LOCAL and pkt_dstIp == IP.LOCAL and tr_dstIp == T_IP.ID and tr_dstPort == T_port.ID)),
+        pkt_srcIp == IP.NON_LOCAL and tr_srcIp == T_IP.ID and tr_srcPort == T_port.ID and local(pkt_dstIp, tr_dstIp)),
     ("p2", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-        (pkt_srcIp == IP.LOCAL and tr_srcIp == T_IP.ID and tr_srcPort == T_port.ID and non_local(pkt_dstIp, tr_dstIp))
-        or (pkt_srcIp == IP.LOCAL and pkt_dstIp == IP.NON_LOCAL and tr_dstIp == T_IP.ID and tr_dstPort == T_port.ID)),
+        pkt_srcIp == IP.LOCAL and tr_dstIp == T_IP.ID and tr_dstPort == T_port.ID and pkt_dstIp == IP.NON_LOCAL),
     ("p3", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-        (pkt_srcIp == IP.NON_LOCAL and pkt_dstIp == T_IP.CONST_NON_LOCAL and tr_dstIp == T_IP.ID and tr_dstPort == T_port.ID)
-        or (pkt_srcIp == IP.NON_LOCAL and pkt_dstIp == IP.NON_LOCAL and non_local(pkt_dstIp, tr_dstIp))
-        or (pkt_srcIp == IP.NON_LOCAL and non_local(pkt_dstIp, tr_dstIp) and tr_srcIp == T_IP.ID and tr_srcPort == T_port.ID)
-        or (pkt_srcIp == IP.NON_LOCAL and non_local(pkt_dstIp, tr_dstIp))),
+        pkt_srcIp == IP.NON_LOCAL and non_local(pkt_dstIp, tr_dstIp)),
     ("p4", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-        (pkt_srcIp == IP.LOCAL and pkt_dstIp == IP.LOCAL and tr_dstIp == T_IP.ID and tr_dstPort == T_port.ID)
-        or (pkt_srcIp == IP.LOCAL and pkt_dstIp == IP.LOCAL and local(pkt_dstIp, tr_dstIp))
-        or (pkt_srcIp == IP.LOCAL and local(pkt_dstIp, tr_dstIp) and tr_srcIp == T_IP.ID and tr_srcPort == T_port.ID)
-        or (pkt_srcIp == IP.LOCAL and local(pkt_dstIp, tr_dstIp)))
+        pkt_srcIp == IP.LOCAL and pkt_dstIp == IP.LOCAL and local(pkt_dstIp, tr_dstIp))
 ]
 
 pf_array_path = [
