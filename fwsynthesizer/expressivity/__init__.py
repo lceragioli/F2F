@@ -3,6 +3,11 @@ from enum import IntEnum
 from copy import deepcopy
 import argparse
 import fwsynthesizer
+import functools
+foldl = lambda func, acc, xs: functools.reduce(func, xs, acc)
+
+
+self_addresses = []
 
 
 class IP(IntEnum):
@@ -11,9 +16,9 @@ class IP(IntEnum):
 
     def __str__(self):
         if self.value == IP.LOCAL:
-            return " Self"
+            return "     Self   "
         else:
-            return "~Self"
+            return "    ~Self   "
 
 
 class T_IP(IntEnum):
@@ -23,7 +28,7 @@ class T_IP(IntEnum):
 
     def __str__(self):
         if self.value == T_IP.ID:
-            return "id"
+            return "    id     "
         elif self.value == T_IP.CONST_LOCAL:
             return "NAT ( Self)"
         else:
@@ -36,512 +41,392 @@ class T_port(IntEnum):
 
     def __str__(self):
         if self.value == T_port.ID:
-            return "id"
+            return "    id     "
         else:
-            return "NAT"
+            return "   NAT     "
 
 
-def local(pkt_Ip, t_Ip):
-    return (pkt_Ip == IP.LOCAL and t_Ip == T_IP.ID) or t_Ip == T_IP.CONST_LOCAL
+class Arrow:
+    def __init__(self, psi, node):
+        self.psi = psi
+        self.node = node
 
 
-def non_local(pkt_Ip, t_Ip):
-    return (pkt_Ip == IP.NON_LOCAL and t_Ip == T_IP.ID) or t_Ip == T_IP.CONST_NON_LOCAL
+def reverse(trace):
+    revtrace = trace[:]
+    revtrace.reverse()
 
-# Old control diagram version
-# ipfw_array_path = [
-#     # p1 = qi; q0; qf
-#     # p2 = qi; q1; qf
-#     # p3 = qi; q0; q1; qf
-#     # p4 = qi; q1; q0; qf
-#     ("p1", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-#         (pkt_srcIp == IP.NON_LOCAL and tr_srcIp == T_IP.ID and tr_srcPort == T_port.ID and local(pkt_dstIp, tr_dstIp))
-#         or (pkt_srcIp == IP.NON_LOCAL and pkt_dstIp == IP.LOCAL and tr_dstIp == T_IP.ID and tr_dstPort == T_port.ID)),
-#     ("p2", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-#         (pkt_srcIp == IP.LOCAL and tr_srcIp == T_IP.ID and tr_srcPort == T_port.ID and non_local(pkt_dstIp, tr_dstIp))
-#         or (pkt_srcIp == IP.LOCAL and pkt_dstIp == IP.NON_LOCAL and tr_dstIp == T_IP.ID and tr_dstPort == T_port.ID)),
-#     ("p3", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-#         (pkt_srcIp == IP.NON_LOCAL and pkt_dstIp == T_IP.CONST_NON_LOCAL and tr_dstIp == T_IP.ID and tr_dstPort == T_port.ID)
-#         or (pkt_srcIp == IP.NON_LOCAL and pkt_dstIp == IP.NON_LOCAL and non_local(pkt_dstIp, tr_dstIp))
-#         or (pkt_srcIp == IP.NON_LOCAL and non_local(pkt_dstIp, tr_dstIp) and tr_srcIp == T_IP.ID and tr_srcPort == T_port.ID)
-#         or (pkt_srcIp == IP.NON_LOCAL and non_local(pkt_dstIp, tr_dstIp))),
-#     ("p4", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-#         (pkt_srcIp == IP.LOCAL and pkt_dstIp == IP.LOCAL and tr_dstIp == T_IP.ID and tr_dstPort == T_port.ID)
-#         or (pkt_srcIp == IP.LOCAL and pkt_dstIp == IP.LOCAL and local(pkt_dstIp, tr_dstIp))
-#         or (pkt_srcIp == IP.LOCAL and local(pkt_dstIp, tr_dstIp) and tr_srcIp == T_IP.ID and tr_srcPort == T_port.ID)
-#         or (pkt_srcIp == IP.LOCAL and local(pkt_dstIp, tr_dstIp)))
-# ]
-ipfw_array_path = [
-    # p1 = qi; q0; qf
-    # p2 = qi; q1; qf
-    # p3 = qi; q0; q1; qf
-    # p4 = qi; q1; q0; qf
-    ("p1", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-        pkt_srcIp == IP.NON_LOCAL and tr_srcIp == T_IP.ID and tr_srcPort == T_port.ID and local(pkt_dstIp, tr_dstIp)),
-    ("p2", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-        pkt_srcIp == IP.LOCAL and tr_dstIp == T_IP.ID and tr_dstPort == T_port.ID and pkt_dstIp == IP.NON_LOCAL),
-    ("p3", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-        pkt_srcIp == IP.NON_LOCAL and non_local(pkt_dstIp, tr_dstIp)),
-    ("p4", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-        pkt_srcIp == IP.LOCAL and pkt_dstIp == IP.LOCAL and local(pkt_dstIp, tr_dstIp))
-]
+    for i in range(len(revtrace)-1):
+        revtrace[i] = (revtrace[i][0], revtrace[i][1], revtrace[i+1][2])
+    revtrace[len(revtrace)-1] = (revtrace[len(revtrace)-1][0], revtrace[len(revtrace)-1][1], lambda x, y: True)
 
-pf_array_path = [
-    # p1 = qi; q0; q1; qf
-    # p2 = qi; q2; q3; qf
-    # p3 = qi; q0; q1; q2; q3; qf
-    # p4 = qi; q2; q3; q0; q1; qf
-    ("p1", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-        pkt_srcIp == IP.NON_LOCAL and tr_srcIp == T_IP.ID and tr_srcPort == T_port.ID and local(pkt_dstIp, tr_dstIp)),
-    ("p2", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-        pkt_srcIp == IP.LOCAL and tr_dstIp == T_IP.ID and tr_dstPort == T_port.ID and pkt_dstIp == IP.NON_LOCAL),
-    ("p3", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-        pkt_srcIp == IP.NON_LOCAL and non_local(pkt_dstIp, tr_dstIp)),
-    ("p4", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-        pkt_srcIp == IP.LOCAL and pkt_dstIp == IP.LOCAL and local(pkt_dstIp, tr_dstIp))
-]
-
-iptables_array_path = [
-    # p1 = qi; q0; q1; q2; q3; q10; q11; qf
-    # p2 = qi; q7; q8; q9; q10; q11; qf
-    # p3 = qi; q0; q1; q4; q5; q6; qf
-    # p4 = qi; q7; q8; q9; q4; q5; q6; qf
-    ("p1", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-        pkt_srcIp == IP.NON_LOCAL and local(pkt_dstIp, tr_dstIp)),
-    ("p2", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-        pkt_srcIp == IP.LOCAL and non_local(pkt_dstIp, tr_dstIp)),
-    ("p3", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-        pkt_srcIp == IP.NON_LOCAL and non_local(pkt_dstIp, tr_dstIp)),
-    ("p4", lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-        pkt_srcIp == IP.LOCAL and local(pkt_dstIp, tr_dstIp))
-]
+    return revtrace
 
 
-array_paths = {
-    "ipfw": ipfw_array_path,
-    "pf": pf_array_path,
-    "iptables": iptables_array_path
-}
-
-# ----------------------------------------- IPrange to subnets implementation ---------------------------------------- #
-
-
-def bits_to_32bits(b):
-    return bin(b)[2:].zfill(32)
-
-
-def ip_to_bits(ip):
-    ip_parts = ip.split(".")
-    ip_parts.reverse()
-    ip_int = 0
-    base = 1
-    for part in ip_parts:
-        ip_int += int(part) * base
-        base *= 256
-    return bits_to_32bits(ip_int)
-# add zero at the end
-
-
-def bits_to_ip(b):
-    int_b = int(b, 2)
-    ip = ''
-    for i in range(3, -1, -1):
-        part = int_b // (256 ** i)
-        int_b = int_b - part * (256 ** i)
-        ip = ip + str(part)
-        if i > 0:
-            ip = ip + '.'
-    return ip
-
-
-def range_to_masks_bin(a, b):
-    # print(a, b)
-    # print(int(a, 2), int(b, 2))
-    if b < a:
-        print('errore')
-        return []
-    if a == b:
-        return [(bits_to_ip(a), 32)]
-    au = a.rfind('1')
-    if au == -1:
-        ap = '1' * 32
-    else:
-        ap = a[:au] + '1' * (32 - au)
-    # print(au, ap)
-    # print(int(ap, 2))
-
-    if ap == b:
-        return [(bits_to_ip(a), au + 1)]
-    elif int(ap, 2) < int(b, 2):
-        ra = range_to_masks_bin(bits_to_32bits(int(ap, 2) + 1), b)
-        ra.append((bits_to_ip(a), au + 1))
-        return ra
-    else:
-        bz = b.rfind('0')
-        bp = b[:bz] + '0' * (32 - bz)
-        if bp == a:
-            return [(bits_to_ip(bp), bz + 1)]
-        else:
-            rb = range_to_masks_bin(a, bits_to_32bits(int(bp, 2) - 1))
-            rb.append((bits_to_ip(bp), bz + 1))
-            return rb
-
-
-def compute_table(array_path):
-    table = []
-    for pkt_srcIp in IP:
-        table.append([])
-        for pkt_dstIp in IP:
-            table[pkt_srcIp].append([])
-            for tr_srcIp in T_IP:
-                table[pkt_srcIp][pkt_dstIp].append([])
-                for tr_srcPort in T_port:
-                    table[pkt_srcIp][pkt_dstIp][tr_srcIp].append([])
-                    for tr_dstIp in T_IP:
-                        table[pkt_srcIp][pkt_dstIp][tr_srcIp][tr_srcPort].append([])
-                        for tr_dstPort in T_port:
-
-                            verified_paths = []
-                            feasible = False
-                            for path in array_path:
-                                if path[1](pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort):
-                                    verified_paths.append(path[0])
-                                    if feasible:
-                                        feasible = True
-                            table[pkt_srcIp][pkt_dstIp][tr_srcIp][tr_srcPort][tr_dstIp].append(verified_paths)
-    return table
-
-
-def verify_some(paths, pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort):
-    for path in paths:
-        if path[1](pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort):
-            return True
-    return False
-
-
-def compare(firewallName1, firewallName2):
-
-    array_paths1 = array_paths[firewallName1]
-    array_paths2 = array_paths[firewallName2]
-
-    table_only1 = compute_table([("Exists",
-                                 lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-                                  verify_some(
-                                      array_paths1, pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort)
-                                  and
-                                  not verify_some(
-                                      array_paths2, pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort)
-                                  )])
-    table_only2 = compute_table([("Exists",
-                                 lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-                                  verify_some(
-                                      array_paths2, pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort)
-                                  and
-                                  not verify_some(
-                                      array_paths1, pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort)
-                                  )])
-
-    table_both = compute_table([("Exists",
-                                lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-                                 verify_some(
-                                      array_paths1, pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort)
-                                 and
-                                 verify_some(
-                                      array_paths2, pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort)
-                                 )])
-
-    table_neither = compute_table([("Exists",
-                                  lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort:
-                                   not verify_some(
-                                        array_paths1, pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort)
-                                   and
-                                   not verify_some(
-                                      array_paths2, pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort)
-                                    )])
-
-    print(",----------------------------------------------------------------------------,")
-    print("|                            FW1 but not FW2                                 |")
-    print("|____________________________________________________________________________|")
-    print_compress_table(table_only1,
-                         lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort: True,
-                         lambda paths: paths != [],
-                         lambda paths: paths)
-
-    print(",----------------------------------------------------------------------------,")
-    print("|                            FW2 but not FW1                                 |")
-    print("|____________________________________________________________________________|")
-    print_compress_table(table_only2,
-                         lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort: True,
-                         lambda paths: paths != [],
-                         lambda paths: paths)
-
-    print(",----------------------------------------------------------------------------,")
-    print("|                           both FW1 and FW2                                 |")
-    print("|____________________________________________________________________________|")
-    print_compress_table(table_both,
-                         lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort: True,
-                         lambda paths: paths != [],
-                         lambda paths: paths)
-
-    print(",----------------------------------------------------------------------------,")
-    print("|                         neither FW1 or FW2                                 |")
-    print("|____________________________________________________________________________|")
-    print_compress_table(table_neither,
-                         lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort: True,
-                         lambda paths: paths != [],
-                         lambda paths: paths)
-
-
-def is_inside(ip, subnet):
-    subnetParts = subnet.split("/")
-    if len(subnetParts) == 1:
-        if ip == subnet:
+def epsilon(trace, transformation):
+    if transformation == "DROP":
+        # print('a')
+        if trace[-1][1] == "DROP":
             return True
         else:
             return False
-    subnetIpBits = ip_to_bits(subnetParts[0])
-    IpBits = ip_to_bits(ip)
-    maskLen = int(subnetParts[1])
-    if subnetIpBits[:maskLen] == IpBits[:maskLen]:
+    # print('b')
+
+    mustBe = set()
+    if transformation["srcIP"] != "id" or transformation["srcPort"] != "id":
+        mustBe.add("SNAT")
+    if transformation["dstIP"] != "id" or transformation["dstPort"] != "id":
+        mustBe.add("DNAT")
+    
+    are = set()
+    for pair in trace:
+        are.add(pair[1])
+        # print(are, mustBe)
+
+    are.remove("ID")
+    if mustBe == are:
         return True
     return False
 
 
-def scan_param_ad(address, firewall_addresses):
-    if address is None:
-        return lambda ad: True
-    # We simply remove the eventual port since it is not important for the expressivity
-    address = address.split(":")[0]
-    if address == "local":
-        return lambda ad: ad == IP.LOCAL
-    if address == "nonlocal":
-        return lambda ad: ad == IP.NON_LOCAL
-    if firewall_addresses is None:
-        raise Exception('missing argument', 'firewall_addesses is needed when using IP source or dest addresses')
-    for subnet in firewall_addresses:
-        if is_inside(address, subnet):
-            return lambda ad: ad == IP.LOCAL
-    return lambda ad: ad == IP.NON_LOCAL
+def apply_t(transformation, packet):
+    packet1 = packet.copy()
+    for key in transformation:
+        if transformation[key] != "id":
+            packet1[key] = transformation[key]
+    return packet1
 
 
-def scan_param_tr_ad(address, firewall_addresses):
-    if address is None:
-        return lambda i, p: True
-    addressParts = address.split(":")
-    if len(addressParts) == 1:
-        okPort = lambda p: True
+class Control_diagram:
+    def __init__(self, node_name, labels = set()):
+        self.node_name = node_name
+        self.content = [] # FixMe
+        self.arrows = set()
+        self.labels = labels.union({"ID"})
+
+
+    def insert(self, packets, transformation, trace):
+        P_a = packets
+        t_r = transformation
+        t_l = {"srcIP": "id", "srcPort": "id", "dstIP": "id", "dstPort": "id"}
+
+        for step in trace:
+            # print(step[0].node_name)
+            (t_a, t_r) = split(t_r, step[1])
+            for annotated_pair in step[0].content:
+                if annotated_pair["t_a"] != t_a:
+                    P_ax = MC_intersec(P_a, annotated_pair["P_a"])
+                    # print(P_a)
+                    # print(annotated_pair["P_a"])
+                    # print(P_ax)
+                    # print("ddd")
+                    if P_ax != "empty":
+                        P_x = inverse_t(t_l, P_ax, packets)
+                        tldP_x = inverse_t(t_l, P_ax, annotated_pair["P"])
+                        print_conflicting_pairs(P_x, tldP_x, transformation, annotated_pair["t"],
+                                                step[0].node_name, P_ax, t_a, annotated_pair["t_a"])
+            step[0].content.append({"P_a" : P_a, "t_l": t_l,  "t_a": t_a, "t": transformation, "P": packets})
+            # if step[0].node_name == "q2":
+            #     print(foldl(lambda x, y: x + "\n" + str(y), "", step[0].content))
+            # print(t_a)
+            # print(t_l)
+            t_l = compose(t_a, t_l)
+            P_a = MC_apply_t(t_a, P_a)
+        # print(len(self.content))
+
+
+    def check(self, packet, transformation):
+        for trace in self.traces():
+            if self.check_trace(packet, transformation, trace):
+                return [trace]
+        return []
+
+    def chi(self, trace, packet, seen):
+        if len(trace) <= 1:
+            return True
+        seenNow = seen.union({trace[0][1]})
+        return self.chi(trace[1:], packet, seenNow) and trace[0][2](packet, seenNow)
+
+    def check_trace(self, packet, transformation, trace):
+        if transformation == "DROP" and trace[-1][1] == "DROP" and self.chi(trace, packet, set()):
+            return True
+        if transformation != "DROP" and epsilon(trace, transformation) and self.chi(trace, packet, set()) and self.chi(reverse(trace), apply_t(transformation, packet), set()):
+            return True
+        return False
+
+    def traces(self, seen = set()):
+        traces = []
+        nodechoices = []
+        for label in self.labels:
+            nodechoices.append([(self, label, lambda x, y: True)])
+        if self.arrows == set():
+            traces = nodechoices
+        else:
+            for nodechoice in nodechoices:
+                if nodechoice[0][1] == "DROP":
+                    traces.append(nodechoice)
+                else:
+                    for arrow in self.arrows:
+                        if not arrow.node.node_name in seen.union({self.node_name}):
+                            nodechoice[0] = (nodechoice[0][0], nodechoice[0][1], arrow.psi)
+                            for subtrace in arrow.node.traces(seen.union({self.node_name})):
+                                traces.append(nodechoice + subtrace)
+        return traces
+
+
+class IPFW_firewall(Control_diagram):
+    def __init__(self):
+        self.ipfw_qf = Control_diagram('qf')
+        self.ipfw_q0 = Control_diagram('q0', {"DNAT", "DROP"})
+        self.ipfw_q1 = Control_diagram('q1', {"SNAT", "DROP"})
+        self.ipfw_q0.arrows = [
+            Arrow(lambda p, seen=set() : "DNAT" in seen or p["dstIP"] in self_addresses, self.ipfw_qf),
+            Arrow(lambda p, seen=set() : "DNAT" in seen or not p["dstIP"] in self_addresses, self.ipfw_q1)
+        ]
+        self.ipfw_q1.arrows = [
+            Arrow(lambda p, seen=set() : "DNAT" in seen or p["dstIP"] in self_addresses, self.ipfw_q0),
+            Arrow(lambda p, seen=set() : "DNAT" in seen or not p["dstIP"] in self_addresses, self.ipfw_qf)
+        ]
+
+        Control_diagram.__init__(self, 'qi')
+        self.arrows = [
+            Arrow(lambda p, seen=set() : "SNAT" in seen or p["srcIP"] in self_addresses, self.ipfw_q1),
+            Arrow(lambda p, seen=set() : "SNAT" in seen or not p["srcIP"] in self_addresses, self.ipfw_q0)
+        ]
+
+
+class PF_firewall(Control_diagram):
+    def __init__(self):
+        self.pf_qf = Control_diagram('qf')
+        self.pf_q0 = Control_diagram('q0', {"SNAT"})
+        self.pf_q1 = Control_diagram('q1', {"DROP"})
+        self.pf_q2 = Control_diagram('q2', {"DNAT"})
+        self.pf_q3 = Control_diagram('q3', {"DROP"})
+        self.pf_q0.arrows = [
+            Arrow(lambda p, seen=set(): True, self.pf_q1),
+        ]
+        self.pf_q2.arrows = [
+            Arrow(lambda p, seen=set() : True, self.pf_q3),
+        ]
+        self.pf_q1.arrows = [
+            Arrow(lambda p, seen=set() : "DNAT" in seen or p["dstIP"] in self_addresses, self.pf_q2),
+            Arrow(lambda p, seen=set() : "DNAT" in seen or not p["dstIP"] in self_addresses, self.pf_qf)
+        ]
+        self.pf_q3.arrows = [
+            Arrow(lambda p, seen=set() : "DNAT" in seen or p["dstIP"] in self_addresses, self.pf_qf),
+            Arrow(lambda p, seen=set() : "DNAT" in seen or not p["dstIP"] in self_addresses, self.pf_q0)
+        ]
+        Control_diagram.__init__(self, 'qi')
+        self.arrows = [
+            Arrow(lambda p, seen=set() : "SNAT" in seen or p["srcIP"] in self_addresses, self.pf_q0),
+            Arrow(lambda p, seen=set() : "SNAT" in seen or not p["srcIP"] in self_addresses, self.pf_q2)
+        ]
+
+
+class IPTABLES_firewall(Control_diagram):
+    def __init__(self):
+        self.ipt_qf = Control_diagram('qf')
+        self.ipt_q0 = Control_diagram('q0')
+        self.ipt_q1 = Control_diagram('q1', {"DNAT"})
+        self.ipt_q2 = Control_diagram('q2')
+        self.ipt_q3 = Control_diagram('q3', {"DROP"})
+        self.ipt_q4 = Control_diagram('q4')
+        self.ipt_q5 = Control_diagram('q5', {"SNAT"})
+        self.ipt_q6 = Control_diagram('q6', {"DROP"})
+        self.ipt_q7 = Control_diagram('q7')
+        self.ipt_q8 = Control_diagram('q8', {"DNAT"})
+        self.ipt_q9 = Control_diagram('q9', {"DROP"})
+        self.ipt_q10 = Control_diagram('q10')
+        self.ipt_q11 = Control_diagram('q11', {"SNAT"})
+        self.ipt_q0.arrows = [
+            Arrow(lambda p, seen=set() : True, self.ipt_q1),
+        ]
+        self.ipt_q2.arrows = [
+            Arrow(lambda p, seen=set() : True, self.ipt_q3),
+        ]
+        self.ipt_q3.arrows = [
+            Arrow(lambda p, seen=set() : True, self.ipt_q10),
+        ]
+        self.ipt_q4.arrows = [
+            Arrow(lambda p, seen=set() : True, self.ipt_q5),
+        ]
+        self.ipt_q5.arrows = [
+            Arrow(lambda p, seen=set() : True, self.ipt_q6),
+        ]
+        self.ipt_q6.arrows = [
+            Arrow(lambda p, seen=set() : True, self.ipt_qf),
+        ]
+        self.ipt_q7.arrows = [
+            Arrow(lambda p, seen=set() : True, self.ipt_q8),
+        ]
+        self.ipt_q8.arrows = [
+            Arrow(lambda p, seen=set() : True, self.ipt_q9),
+        ]
+        self.ipt_q10.arrows = [
+            Arrow(lambda p, seen=set() : True, self.ipt_q11),
+        ]
+        self.ipt_q11.arrows = [
+            Arrow(lambda p, seen=set() : True, self.ipt_qf),
+        ]
+        self.ipt_q1.arrows = [
+            Arrow(lambda p, seen=set() : "DNAT" in seen or p["dstIP"] in self_addresses, self.ipt_q4),
+            Arrow(lambda p, seen=set() : "DNAT" in seen or not p["dstIP"] in self_addresses, self.ipt_q2)
+        ]
+        self.ipt_q9.arrows = [
+            Arrow(lambda p, seen=set() : "DNAT" in seen or p["dstIP"] in self_addresses, self.ipt_q4),
+            Arrow(lambda p, seen=set() : "DNAT" in seen or not p["dstIP"] in self_addresses, self.ipt_q10)
+        ]
+        Control_diagram.__init__(self, 'qi')
+        self.arrows = [
+            Arrow(lambda p, seen=set() : "SNAT" in seen or p["srcIP"] in self_addresses, self.ipt_q7),
+            Arrow(lambda p, seen=set() : "SNAT" in seen or not p["srcIP"] in self_addresses, self.ipt_q1)
+        ]
+
+
+def compute_fields(pkt_srcIP, pkt_dstIP, tr_srcIP, tr_dstIP):
+    if tr_srcIP == T_IP.ID and tr_dstIP == T_IP.ID:
+        tr_type = "  ID  "
+    elif tr_srcIP == T_IP.ID:
+        tr_type = " DNAT "
+    elif tr_dstIP == T_IP.ID:
+        tr_type = " SNAT "
     else:
-        port = addressParts[1]
-        if port == "id":
-            okPort = lambda ad: ad == T_port.ID
-        elif port == "non-id":
-            okPort = lambda ad: ad == T_port.CONST
-    ip = addressParts[0]
-    if ip == "id":
-        okIP = lambda ad: ad == T_IP.ID
-    elif ip == "non-id":
-        okIP = lambda ad: ad != T_IP.ID
-    elif ip == "NAT-local":
-        okIP = lambda ad: ad == T_IP.CONST_LOCAL
-    elif ip == "NAT-nonlocal":
-        okIP = lambda ad: ad == T_IP.CONST_NON_LOCAL
-    elif firewall_addresses is None:
-        raise Exception('missing argument', 'firewall_addesses is needed when using IP source or dest addresses')
+        tr_type = " -NAT "
+
+    if tr_srcIP == T_IP.ID:
+        pkt1_srcIP = pkt_srcIP
+    elif tr_srcIP == T_IP.CONST_LOCAL:
+        pkt1_srcIP = IP.LOCAL
     else:
-        ip = ip.split("-")[1]
-        for subnet in firewall_addresses:
-            if is_inside(ip, subnet):
-                okIP = lambda ad: ad == T_IP.CONST_LOCAL
-                break
-        okIP = lambda ad: ad == T_IP.CONST_NON_LOCAL
+        pkt1_srcIP = IP.NON_LOCAL
 
-    return lambda ip, port: okIP(ip) and okPort(port)
+    if tr_dstIP == T_IP.ID:
+        pkt1_dstIP = pkt_dstIP
+    elif tr_dstIP == T_IP.CONST_LOCAL:
+        pkt1_dstIP = IP.LOCAL
+    else:
+        pkt1_dstIP = IP.NON_LOCAL   
 
-
-def print_expr_table(array_path, source, dest, trsource, trdest, firewall_addresses):
-    oksource = scan_param_ad(source, firewall_addresses)
-    okdest = scan_param_ad(dest, firewall_addresses)
-    oktrsource = scan_param_tr_ad(trsource, firewall_addresses)
-    oktrdest = scan_param_tr_ad(trdest, firewall_addresses)
-
-    okall = lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort: \
-        oksource(pkt_srcIp) and okdest(pkt_dstIp) and \
-        oktrsource(tr_srcIp, tr_srcPort) and oktrdest(tr_dstIp, tr_dstPort)
-
-    table = compute_table(array_path)
-    print_explicit_table(table, okall)
-
-    print(",----------------------------------------------------------------------------,")
-    print("|                            COMPRESSED TABLE                                |")
-    print("|____________________________________________________________________________|")
-    print_compress_table(table, okall)
-
-    print(",----------------------------------------------------------------------------,")
-    print("|                             EXPRESSIBLE                                    |")
-    print("|____________________________________________________________________________|")
-    print_compress_table(table,
-                         okall,
-                         lambda paths: paths != [],
-                         lambda paths: "Exist")
-
-    print(",----------------------------------------------------------------------------,")
-    print("|                            UNEXPRESSIBLE                                   |")
-    print("|____________________________________________________________________________|")
-    print_compress_table(table,
-                         okall,
-                         lambda paths: paths == [],
-                         lambda paths: paths)
+    return "|" + str(pkt_dstIP) + "|" + str(pkt_srcIP) + "|" +  tr_type + "|" + str(pkt1_dstIP) + "|" + str(pkt1_srcIP) + " :: "
 
 
-def check(array_path, source, dest, trsource, trdest, firewall_addresses):
-    oksource = scan_param_ad(source, firewall_addresses)
-    okdest = scan_param_ad(dest, firewall_addresses)
-    oktrsource = scan_param_tr_ad(trsource, firewall_addresses)
-    oktrdest = scan_param_tr_ad(trdest, firewall_addresses)
-
-    okall = lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort: \
-        oksource(pkt_srcIp) and okdest(pkt_dstIp) and \
-        oktrsource(tr_srcIp, tr_srcPort) and oktrdest(tr_dstIp, tr_dstPort)
-
-    table = compute_table(array_path)
-    for pkt_srcIp in IP:
-        for pkt_dstIp in IP:
-            for tr_srcIp in T_IP:
-                for tr_srcPort in T_port:
-                    for tr_dstIp in T_IP:
-                        for tr_dstPort in T_port:
-                            paths = table[pkt_srcIp][pkt_dstIp][tr_srcIp][tr_srcPort][tr_dstIp][tr_dstPort]
-                            if paths != [] and okall(pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort):
-                                print("EXPRESSIBLE")
-                                return
-                            if paths == [] and okall(pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort):
-                                print("NOT EXPRESSIBLE")
-                                return
-    print("NOT EXPRESSIBLE")
+def print_expr_table(firewall):
+    table = compute_table(firewall)
+    s = ""
+    transformations_type = [
+        (T_IP.ID, T_IP.ID), (T_IP.ID, T_IP.CONST_LOCAL), (T_IP.ID, T_IP.CONST_NON_LOCAL), 
+        (T_IP.CONST_LOCAL, T_IP.ID), (T_IP.CONST_NON_LOCAL, T_IP.ID), (T_IP.CONST_LOCAL, T_IP.CONST_LOCAL), 
+        (T_IP.CONST_LOCAL, T_IP.CONST_NON_LOCAL), (T_IP.CONST_NON_LOCAL, T_IP.CONST_LOCAL), (T_IP.CONST_NON_LOCAL, T_IP.CONST_NON_LOCAL)]
+    for (tr_srcIP, tr_dstIP) in transformations_type:
+            for pkt_dstIP in IP:
+                for pkt_srcIP in IP:
+                    fields = compute_fields(pkt_srcIP, pkt_dstIP, tr_srcIP, tr_dstIP)
+                    s += fields + print_traces(table[pkt_srcIP][pkt_dstIP][tr_srcIP][tr_dstIP]) + "\n" 
+    print(s[:-1])
 
 
-def print_explicit_table(table,
-                         filter_cond=lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort: True,
-                         filter_paths=lambda paths: True):
-    print(",----------------------------------------------------------------------------,")
-    print("|                             EXPLICIT TABLE                                 |")
-    print("|____________________________________________________________________________|")
-    print("|| srcIp , dstIp | tr_srcIp   : tr_srcPort , tr_dstIp   : tr_dstPort || paths ")
-    print("------------------------------------------------------------------------------")
-    for pkt_srcIp in IP:
-        for pkt_dstIp in IP:
-            for tr_srcIp in T_IP:
-                for tr_srcPort in T_port:
-                    for tr_dstIp in T_IP:
-                        for tr_dstPort in T_port:
-                            paths = table[pkt_srcIp][pkt_dstIp][tr_srcIp][tr_srcPort][tr_dstIp][tr_dstPort]
-                            if filter_cond(pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort) and \
-                               filter_paths(paths):
-                                print("|| " + str(pkt_srcIp).ljust(5) + " , " + str(pkt_dstIp).ljust(5) + " | " +
-                                      str(tr_srcIp).ljust(10) + " : " + str(tr_srcPort).ljust(10) + " , " +
-                                      str(tr_dstIp).ljust(10) + " : " + str(tr_dstPort).ljust(10) + " || " +
-                                      str(table[pkt_srcIp][pkt_dstIp][tr_srcIp][tr_srcPort][tr_dstIp][tr_dstPort]))
-
-    print("------------------------------------------------------------------------------")
+def compute_table(firewall):
+    table = []
+    for pkt_srcIP in IP:
+        table.append([])
+        for pkt_dstIP in IP:
+            table[pkt_srcIP].append([])
+            for tr_srcIP in T_IP:
+                table[pkt_srcIP][pkt_dstIP].append([])
+                for tr_dstIP in T_IP:
+                    table[pkt_srcIP][pkt_dstIP][tr_srcIP].append([])
+                    packet = create_packet(pkt_srcIP, pkt_dstIP)
+                    transformation = create_transformation(tr_srcIP, tr_dstIP)
+                    # if firewall.check(packet, transformation) == []:
+                    #     print(pkt_srcIP,pkt_dstIP,tr_srcIP,tr_dstIP)
+                    #     print(packet, transformation)
+                    table[pkt_srcIP][pkt_dstIP][tr_srcIP][tr_dstIP] = firewall.check(packet, transformation)
+    return table
 
 
-def print_compress_table(table,
-                         filter_cond=lambda pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort: True,
-                         filter_paths=lambda paths: True,
-                         represent_paths=lambda paths: paths):
-
-    symbols = [IP, IP, T_IP, T_port, T_IP, T_port]
-    lines_spec = []
-    paths = []
-    for num_char in range(7):
-        for positions in subsets_of_given_dim(num_char, 6):
-            specification = ["_", "_", "_", "_", "_", "_"]
-            for chars_combination in combinations([symbols[position] for position in positions], num_char):
-                for index in range(num_char):
-                    specification[positions[index]] = chars_combination[index]
-                if not_discarded(specification, lines_spec):
-                    path = compute_path(specification, table, filter_cond, filter_paths, represent_paths)
-                    if path is not None:
-                        paths.append(path)
-                        lines_spec.append(deepcopy(specification))
-
-    print("|| srcIp , dstIp | tr_srcIp   : tr_srcPort , tr_dstIp   : tr_dstPort || paths ")
-    print("------------------------------------------------------------------------------")
-    strings_for_lines = []
-    for i in range(len(lines_spec)):
-        specification = lines_spec[i]
-        path = paths[i]
-        strings_for_lines.append("|| " + str(specification[0]).ljust(5) + " , " + str(specification[1]).ljust(5) +
-                                 " | " + str(specification[2]).ljust(10) + " : " + str(specification[3]).ljust(10) +
-                                 " , " + str(specification[4]).ljust(10) + " : " + str(specification[5]).ljust(10) +
-                                 " || " + str(path))
-    strings_for_lines.sort()
-    for string_line in strings_for_lines:
-        print(string_line)
-    print("------------------------------------------------------------------------------")
+def create_packet(pkt_srcIP, pkt_dstIP):
+    if pkt_srcIP == IP.LOCAL:
+        srcIP = "127.0.0.1"
+    else:
+        srcIP = "1.1.1.1"
+    if pkt_dstIP == IP.LOCAL:
+        dstIP = "127.0.0.1"
+    else:
+        dstIP = "1.1.1.1"
+    return {"srcIP": srcIP, "srcPort": "54", "dstIP": dstIP, "dstPort": "58"}
 
 
-def subsets_of_given_dim(dim_sub, dim_set):
-    index = [i for i in range(dim_sub)]
-    sets = []
-    if dim_sub < 1:
-        return [[]]
-    while index[0] <= dim_set - dim_sub:
-        sets.append(deepcopy(index))
-        for i in range(dim_sub - 1, -1, -1):
-            if index[i] + 1 <= dim_set - dim_sub + i:
-                index[i] = index[i] + 1
-                for j in range(i, dim_sub):
-                    index[j] = index[i] + (j - i)
-                break
-            elif i == 0:
-                return sets
-    return sets
+def create_transformation(tr_srcIP, tr_dstIP):
+    if tr_srcIP == T_IP.ID:
+        srcIP = "id"
+    elif tr_srcIP == T_IP.CONST_LOCAL:
+        srcIP = "127.0.0.1"
+    else:
+        srcIP = "1.1.1.1"
+
+    if tr_dstIP == T_IP.ID:
+        dstIP = "id"
+    elif tr_dstIP == T_IP.CONST_LOCAL:
+        dstIP = "127.0.0.1"
+    else:
+        dstIP = "1.1.1.1"
+
+    return {"srcIP": srcIP, "srcPort": "id", "dstIP": dstIP, "dstPort": "id"}
 
 
-def combinations(symbols, num_char):
-    combination_list = []
-    if num_char == 0:
-        return [[]]
-    for symbol in symbols[0]:
-        for subCombination in combinations(symbols[1:], num_char - 1):
-            combination_list.append([symbol] + subCombination)
-    return combination_list
+def print_trace(trace):
+    if trace != []:
+        return "(" + trace[0][0].node_name + ", " + trace[0][1] + ")" + ", " + print_trace(trace[1:])
+    return ""
 
 
-def compute_path(specification, table, filter_cond, filter_paths, represent_paths):
-    label = False
-    first_path = None
-    for pkt_srcIp in (IP if specification[0] == "_" else [specification[0]]):
-        for pkt_dstIp in (IP if specification[1] == "_" else [specification[1]]):
-            for tr_srcIp in (T_IP if specification[2] == "_" else [specification[2]]):
-                for tr_srcPort in (T_port if specification[3] == "_" else [specification[3]]):
-                    for tr_dstIp in (T_IP if specification[4] == "_" else [specification[4]]):
-                        for tr_dstPort in (T_port if specification[5] == "_" else [specification[5]]):
-                            if filter_cond(pkt_srcIp, pkt_dstIp, tr_srcIp, tr_srcPort, tr_dstIp, tr_dstPort):
-                                path = table[pkt_srcIp][pkt_dstIp][tr_srcIp][tr_srcPort][tr_dstIp][tr_dstPort]
-                                if not filter_paths(path):
-                                    return None
-                                elif not label:
-                                    first_path = represent_paths(path)
-                                    label = True
-                                elif first_path != represent_paths(path):
-                                    return None
-    return first_path
+def print_traces(traces):
+    s = "{ "
+    for trace in traces:
+        s += print_trace(trace)
+    s = s + "}" if len(s) < 4 else s[:-2] + " }"
+    return s
 
 
-def not_discarded(specification, discarded):
-    for discarded_spec in discarded:
-        if represent(discarded_spec, specification):
-            return False
-    return True
+def print_expr_tables():
+    iptables_ex = IPTABLES_firewall()
+    pf_ex = PF_firewall()
+    ipfw_ex = IPFW_firewall()
+
+    print("==============================================================================")
+    print("|                                     PF                                     |")
+    print("==============================================================================")
+    print("|    p_dst   |    p_src   |  t   |  t(p)_dst  |  t(p)_src   |")
+    print("-------------------------------------------------------------")
+    print_expr_table(pf_ex)
+    print("==============================================================================\n")
+
+    print("==============================================================================")
+    print("|                                    IPFW                                    |")
+    print("==============================================================================")
+    print("|    p_dst   |    p_src   |  t   |  t(p)_dst  |  t(p)_src   |")
+    print("-------------------------------------------------------------")
+    print_expr_table(ipfw_ex)
+    print("==============================================================================\n")
+
+    print("==============================================================================")
+    print("|                                  IPTABLES                                  |")
+    print("==============================================================================")
+    print("|    p_dst   |    p_src   |  t   |  t(p)_dst  |  t(p)_src   |")
+    print("-------------------------------------------------------------")
+    print_expr_table(iptables_ex)
+    print("==============================================================================\n")
 
 
-def represent(spec1, spec2):
-    for i in range(len(spec1)):
-        if spec1[i] != "_" and spec1[i] != spec2[i]:
-            return False
-    return True
+def dot_to_integer_ip(dot):
+    values = dot.split(".")
+    values.reverse()
+    integer = 0
+    base = 1
+    for value in values:
+        integer = integer + (base * int(value))
+        base = base * 256
+    return integer
 
 
 def intersect_diff(list_of_segments, list_of_address):
@@ -572,145 +457,45 @@ def intersect_diff(list_of_segments, list_of_address):
     return (inter, diff)
 
 
-def dot_to_integer_ip(dot):
-    values = dot.split(".")
-    values.reverse()
-    integer = 0
-    base = 1
-    for value in values:
-        integer = integer + (base * int(value))
-        base = base * 256
-    return integer
+def take_one_packet(packets):
+    return {"srcIP": packets[0][0][0], "srcPort": packets[1][0][0], "dstIP": packets[2][0][0], "dstPort": packets[3][0][0]}
 
 
-def integer_to_dot_ip(integer):
-    string = ""
-    value = integer
-    positions = range(4)
-    positions.reverse()
-    for pos in positions:
-        base = 256 ** pos
-        pos_val = value / base
-        string = string + str(pos_val)
-        value = value - (base * pos_val)
-        if pos != 0:
-            string = string + "."
-    return string
+def print_conflicting_pairs(P_x, tldP_x, t, tldt, node_name, P_ax, t_a, tldt_a):
+    print("\n\n!!! Conflicting Pairs Found !!!\n")
+
+    print("(P1, t1):")
+    print_rule(P_x, t)
+
+    print("\n(P2, t2):")
+    print_rule(tldP_x, tldt)
+
+    print("\nin node " + node_name + ":")
+    print("with [P@ || t1@ || t2@]:")
+    print_rule_conflict(P_ax, t_a, tldt_a)
 
 
-def print_ip_rages(ranges):
-    s =  ""
-    for range in ranges:
-        s = s + str(range[0]) + " - " + str(range[1]) + ", "
-    return s
-
-
-def print_port_rages(ranges):
-    s =  ""
-    for range in ranges:
-        s = s + str(range[0]) + " - " + str(range[1]) + ", "
-    return s
-
-
-def check(semantics, target_system, interfaces):
-
-    self_addresses = [dot_to_integer_ip(v[1]) for v in interfaces.values()]
-    rules = semantics.get_rules()
-    for rule in rules:
-        if rule[0][5] == [[1, 1]]:
-            # we do not consider enstablished connections
-            continue
-
-        # split based on selfness of addresses
-        IP_types = [IP.LOCAL, IP.NON_LOCAL]
-        src_IPs = intersect_diff(rule[0][0], self_addresses)
-        dst_IPs = intersect_diff(rule[0][2], self_addresses)
-
-        # check each resulting rule
-        # srcIP
-        if rule[1][0] == []:
-            tr_srcIP = T_IP.ID
-        else:
-            (tr_srcIP_self, tr_srcIP_Noself) = intersect_diff(rule[1][0], self_addresses)
-            if tr_srcIP_self == []:
-                tr_srcIP = T_IP.CONST_NON_LOCAL
-            elif tr_srcIP_Noself == []:
-                tr_srcIP = T_IP.CONST_LOCAL
-            else:
-                print('ERROR! This tool does not support NAT to range of addresses')
-                continue
-        # srcPort
-        if rule[1][1] == []:
-            tr_srcPort = T_port.ID
-        else:
-            tr_srcPort = T_port.CONST
-        # dstIP
-        if rule[1][2] == []:
-            tr_dstIP = T_IP.ID
-        else:
-            (tr_dstIP_self, tr_dstIP_Noself) = intersect_diff(rule[1][2], self_addresses)
-            if tr_dstIP_self == []:
-                tr_dstIP = T_IP.CONST_NON_LOCAL
-            elif tr_dstIP_Noself == []:
-                tr_dstIP = T_IP.CONST_LOCAL
-            else:
-                print("EEE")
-        # dstPort
-        if rule[1][3] == []:
-            tr_dstPort = T_port.ID
-        else:
-            tr_dstPort = T_port.CONST
-
-        # compute tables representing the expressivity of target system
-        target_table = compute_table(array_paths[target_system])
-
-        for i in range(2):
-            for j in range(2):
-                if src_IPs[i] != [] and dst_IPs[j] != [] and \
-                        target_table[IP_types[i]][IP_types[j]][tr_srcIP][tr_srcPort][tr_dstIP][tr_dstPort] == []:
-                            # if something is not expressible then print it and complain
-                            print("\nPROBLEM FOUND!\n"
-                                  "In " + target_system + " the following rule schema is not expressible!")
-                            print("==============================================================================")
-                            print("|  srcIp  |  dstIp  ||   tr_srcIp   : tr_srcPort |   tr_dstIp   : tr_dstPort |")
-                            print("==============================================================================")
-                            print("| " + str(IP_types[i]).ljust(7) + " | " + str(IP_types[j]).ljust(7) +
-                                  " || " + str(tr_srcIP).ljust(12) + " : " + str(tr_srcPort).ljust(10) +
-                                  " | " + str(tr_dstIP).ljust(12) + " : " + str(tr_dstPort).ljust(10) + " |")
-                            # print("srcIP: " + str(IP_types[i]) + ", dstIP: " + str(IP_types[j]) + " --> tr_srcIP: " +
-                            #       str(tr_srcIP) + ", tr_srcPort: " + str(tr_srcPort) + ", tr_dstIP: " + str(tr_dstIP) +
-                            #       ", tr_dstPort: " + str(tr_dstPort))
-                            print("==============================================================================")
-                            print("Hence the following is impossible to achieve:")
-                            print_rule(src_IPs[i], dst_IPs[j], rule)
-
-                            # print("-----------------------------------------------------------------------------------------")
-                            # print("|| srcIp | srcPort |  dstIp | dstPort || tr_srcIp : tr_srcPort | tr_dstIp : tr_dstPort ||")
-                            # print("-----------------------------------------------------------------------------------------")
-                            #
-                            # print(print_ip_rages(src_IPs[i]) + " | " + print_port_rages(rule[0][1]) + " | " +
-                            #       print_ip_rages(dst_IPs[j]) + " | " + print_port_rages(rule[0][3]) + " || " +
-                            #       print_ip_rages(rule[1][0]) + print_ip_rages(rule[1][0]))
-
-
-def print_rule(src_segments, dst_segments, rule):
+def print_rule(packets, transformation):
     row = [["sIp"], ["sPort"], ["dIp"], ["dPort"], ["prot"],
            ["tr_src"], ["tr_dst"]]
+    
+    src_segments = packets[0]
+    dst_segments = packets[2]
 
-    if rule[0][4] == [[18, 255], [0, 16]]:
+    if packets[4] == [[18, 255], [0, 16]]:
         row[4].append("* \ {udp}")
-    elif rule[0][4] == [[7, 255], [0, 5]]:
+    elif packets[4] == [[7, 255], [0, 5]]:
         row[4].append("* \ {tcp}")
-    elif rule[0][4] == [[18, 255], [7, 16], [0, 5]]:
+    elif packets[4] == [[18, 255], [7, 16], [0, 5]]:
         row[4].append("* \ {tcp, udp}")
     else:
-        row[4] += [print_prot_range(r) for r in rule[0][4]]
+        row[4] += [print_prot_range(r) for r in packets[4]]
 
     # plus one because of the header line
     line_num = max([len(list_of_segments) + 1 for list_of_segments in
-                   [rule[0][1]] + [row[4]] + [src_segments, dst_segments]])
+                   [packets[1]] + [row[4]] + [src_segments, dst_segments]])
     # print(row_num)
-    # print(rule[0])
+    # print(packets)
     # print(src_segments)
     # print(dst_segments)
 
@@ -720,8 +505,8 @@ def print_rule(src_segments, dst_segments, rule):
         else:
             row[0].append("")
 
-        if len(rule[0][1]) > line:
-            row[1].append(print_port_range(rule[0][1][line]))
+        if len(packets[1]) > line:
+            row[1].append(print_port_range(packets[1][line]))
         else:
             row[1].append("")
 
@@ -730,8 +515,8 @@ def print_rule(src_segments, dst_segments, rule):
         else:
             row[2].append("")
 
-        if len(rule[0][3]) > line:
-            row[3].append(print_port_range(rule[0][3][line]))
+        if len(packets[3]) > line:
+            row[3].append(print_port_range(packets[3][line]))
         else:
             row[3].append("")
 
@@ -739,28 +524,28 @@ def print_rule(src_segments, dst_segments, rule):
             row[4].append("")
 
         if line == 0:
-            tr_src_string = ""
-            if rule[1][0] != []:
-                tr_src_string += print_ip_range(rule[1][0][0])
+            tr_src_string = "" 
+            if transformation["srcIP"] != "id":
+                tr_src_string += print_ip_range([transformation["srcIP"], transformation["srcIP"]])
             else:
-                tr_src_string += "-"
+                tr_src_string += "id"
             tr_src_string += " : "
-            if rule[1][1] != []:
-                tr_src_string += print_port_range(rule[1][1][0])
+            if transformation["srcPort"] != "id":
+                tr_src_string += print_port_range([transformation["srcPort"], transformation["srcPort"]])
             else:
-                tr_src_string += "-"
+                tr_src_string += "id"
             row[5].append(tr_src_string)
 
             tr_dst_string = ""
-            if rule[1][2] != []:
-                tr_dst_string += print_ip_range(rule[1][2][0])
+            if transformation["dstIP"] != "id":
+                tr_dst_string += print_ip_range([transformation["dstIP"], transformation["dstIP"]])
             else:
-                tr_dst_string += "-"
+                tr_dst_string += "id"
             tr_dst_string += " : "
-            if rule[1][3] != []:
-                tr_dst_string += print_port_range(rule[1][3][0])
+            if transformation["dstPort"] != "id":
+                tr_dst_string += print_port_range([transformation["dstPort"], transformation["dstPort"]])
             else:
-                tr_dst_string += "-"
+                tr_dst_string += "id"
             row[6].append(tr_dst_string)
         else:
             for i in range(5, 7):
@@ -781,6 +566,135 @@ def print_rule(src_segments, dst_segments, rule):
         print("")
         if line == 0 or line == line_num - 1:
             print("=" * (sum(width) + 11))
+
+
+def print_rule_conflict(packets, transformation1, transformation2):
+    row = [["sIp"], ["sPort"], ["dIp"], ["dPort"], ["prot"],
+           ["tr1_src"], ["tr1_dst"], ["tr2_src"], ["tr2_dst"]]
+
+    src_segments = packets[0]
+    dst_segments = packets[2]
+
+    if packets[4] == [[18, 255], [0, 16]]:
+        row[4].append("* \ {udp}")
+    elif packets[4] == [[7, 255], [0, 5]]:
+        row[4].append("* \ {tcp}")
+    elif packets[4] == [[18, 255], [7, 16], [0, 5]]:
+        row[4].append("* \ {tcp, udp}")
+    else:
+        row[4] += [print_prot_range(r) for r in packets[4]]
+
+    # plus one because of the header line
+    line_num = max([len(list_of_segments) + 1 for list_of_segments in
+                    [packets[1]] + [row[4]] + [src_segments, dst_segments]])
+    # print(row_num)
+    # print(packets)
+    # print(src_segments)
+    # print(dst_segments)
+
+    for line in range(line_num):
+        if len(src_segments) > line:
+            row[0].append(print_ip_range(src_segments[line]))
+        else:
+            row[0].append("")
+
+        if len(packets[1]) > line:
+            row[1].append(print_port_range(packets[1][line]))
+        else:
+            row[1].append("")
+
+        if len(dst_segments) > line:
+            row[2].append(print_ip_range(dst_segments[line]))
+        else:
+            row[2].append("")
+
+        if len(packets[3]) > line:
+            row[3].append(print_port_range(packets[3][line]))
+        else:
+            row[3].append("")
+
+        if len(row[4]) <= line:
+            row[4].append("")
+
+        if line == 0:
+            tr_src_string = ""
+            if transformation1["srcIP"] != "id":
+                tr_src_string += print_ip_range([transformation1["srcIP"], transformation1["srcIP"]])
+            else:
+                tr_src_string += "id"
+            tr_src_string += " : "
+            if transformation1["srcPort"] != "id":
+                tr_src_string += print_port_range([transformation1["srcPort"], transformation1["srcPort"]])
+            else:
+                tr_src_string += "id"
+            row[5].append(tr_src_string)
+
+            tr_dst_string = ""
+            if transformation1["dstIP"] != "id":
+                tr_dst_string += print_ip_range([transformation1["dstIP"], transformation1["dstIP"]])
+            else:
+                tr_dst_string += "id"
+            tr_dst_string += " : "
+            if transformation1["dstPort"] != "id":
+                tr_dst_string += print_port_range([transformation1["dstPort"], transformation1["dstPort"]])
+            else:
+                tr_dst_string += "id"
+            row[6].append(tr_dst_string)
+
+            tr_src_string = ""
+            if transformation2["srcIP"] != "id":
+                tr_src_string += print_ip_range([transformation2["srcIP"], transformation2["srcIP"]])
+            else:
+                tr_src_string += "id"
+            tr_src_string += " : "
+            if transformation2["srcPort"] != "id":
+                tr_src_string += print_port_range([transformation2["srcPort"], transformation2["srcPort"]])
+            else:
+                tr_src_string += "id"
+            row[7].append(tr_src_string)
+
+            tr_dst_string = ""
+            if transformation2["dstIP"] != "id":
+                tr_dst_string += print_ip_range([transformation2["dstIP"], transformation2["dstIP"]])
+            else:
+                tr_dst_string += "id"
+            tr_dst_string += " : "
+            if transformation2["dstPort"] != "id":
+                tr_dst_string += print_port_range([transformation2["dstPort"], transformation2["dstPort"]])
+            else:
+                tr_dst_string += "id"
+            row[8].append(tr_dst_string)
+        else:
+            for i in range(5, 9):
+                row[i].append("")
+
+    width = [0] * 9
+    for i in range(9):
+        width[i] = max([len(field) + 2 for field in row[i]])
+
+    print("=" * (sum(width) + 14))
+    for line in range(line_num):
+        sys.stdout.write("||")
+        for field in range(9):
+            sys.stdout.write(row[field][line].center(width[field]))
+            sys.stdout.write("|")
+            if field == 4 or field == 6 or field == 8:
+                sys.stdout.write("|")
+        print("")
+        if line == 0 or line == line_num - 1:
+            print("=" * (sum(width) + 14))
+
+
+def normalize_rule(rule):
+    for range in rule[0][0] + rule[0][2] + rule[1][0] + rule[1][2]:
+        range[0] = normalize_ip(range[0])
+        range[1] = normalize_ip(range[1])
+
+
+def normalize_ip(ip):
+    if ip < 0:
+        return (4294967296 + ip) % 4294967296
+    return ip
 
 
 def print_ip(ip):
@@ -829,3 +743,238 @@ def print_prot_range(range):
         return "*"
     else:
         return print_prot(range[0]) + " - " + print_prot(range[1])
+
+
+def intersect_diff(list_of_segments, list_of_address):
+    inter = []
+    # print("list of segment", list_of_segments)
+    diff = [ [(4294967296 + s[0]) % 4294967296, (4294967296 + s[1]) % 4294967296] for s in list_of_segments ]
+
+    # print(list_of_segments, list_of_address)
+    for address in list_of_address:
+        new_diff = []
+        for segment in diff:
+            if address == segment[0] and segment[1] == segment[0]:
+                inter.append([address,address])
+            elif address == segment[0] and segment[1] != segment[0]:
+                inter.append([address,address])
+                new_diff.append([segment[0]+1, segment[1]])
+            elif address == segment[1] and segment[1] != segment[0]:
+                inter.append([address,address])
+                new_diff.append([segment[0], segment[1]-1])
+            elif segment[0] < address < segment[1]:
+                inter.append([address,address])
+                new_diff.append([segment[0], address-1])
+                new_diff.append([address+1, segment[1]])
+            elif address < segment[0] or address > segment[1]:
+                new_diff.append(segment)
+        diff = new_diff
+
+    return (inter, diff)
+
+
+def dot_to_integer_ip(dot):
+    values = dot.split(".")
+    values.reverse()
+    integer = 0
+    base = 1
+    for value in values:
+        integer = integer + (base * int(value))
+        base = base * 256
+    return integer
+
+
+def integer_to_dot_ip(integer):
+    string = ""
+    value = integer
+    positions = range(4)
+    positions.reverse()
+    for pos in positions:
+        base = 256 ** pos
+        pos_val = value / base
+        string = string + str(pos_val)
+        value = value - (base * pos_val)
+        if pos != 0:
+            string = string + "."
+    return string
+
+
+def print_ip_rages(ranges):
+    s = ""
+    for range in ranges:
+        s = s + str(range[0]) + " - " + str(range[1]) + ", "
+    return s
+
+
+def print_port_rages(ranges):
+    s = ""
+    for range in ranges:
+        s = s + str(range[0]) + " - " + str(range[1]) + ", "
+    return s
+
+
+def verify(packets, transformation, firewall):
+    packet = take_one_packet(packets)
+    # print("checking " + str(packet) + str(transformation))
+    # print(print_traces(firewall.check(packet, transformation)))
+    traces = firewall.check(packet, transformation)
+    if traces == []:
+        # print(packets, transformation)
+        print("\n\n!!! Inexpressible Pair Found !!!\n")
+        print_rule(packets, transformation)
+    else:
+        firewall.insert(packets, transformation, traces[0])
+
+
+def check(semantics, target_system, interfaces):
+
+    global self_addresses
+    # print("\n")
+    # print(target_system)
+    if target_system == "iptables":
+        firewall = IPTABLES_firewall()
+    elif target_system == "ipfw":
+        firewall = IPFW_firewall()
+    else:
+        firewall = PF_firewall()
+    
+    self_addresses = [dot_to_integer_ip(v[1]) for v in interfaces.values()]
+    rules = semantics.get_rules()
+
+    for rule in rules:
+        if rule[0][5] == [[1, 1]]:
+            # we do not consider enstablished connections
+            continue
+
+        normalize_rule(rule)
+        # split based on selfness of addresses
+        IP_types = [IP.LOCAL, IP.NON_LOCAL]
+        src_IPs = intersect_diff(rule[0][0], self_addresses)
+        dst_IPs = intersect_diff(rule[0][2], self_addresses)
+        # check each resulting rule
+        # srcIP
+        if rule[1][0] == []:
+            tr_srcIP = "id"
+        else:
+            if len(rule[1][0]) > 1 or rule[1][0][0][0] != rule[1][0][0][0]:
+                print('ERROR! This tool does not support NAT to range of addresses')
+                continue
+            else:
+                tr_srcIP = rule[1][0][0][0]
+        # srcPort
+        if rule[1][1] == []:
+            tr_srcPort = "id"
+        else:
+            if len(rule[1][1]) > 1 or rule[1][1][0][0] != rule[1][1][0][0]:
+                print('ERROR! This tool does not support NAT to range of addresses')
+                continue
+            else:
+                tr_srcPort = rule[1][1][0][0] 
+        # dstIP
+        if rule[1][2] == []:
+            tr_dstIP = "id"
+        else:
+            if len(rule[1][2]) > 1 or rule[1][2][0][0] != rule[1][2][0][0]:
+                print('ERROR! This tool does not support NAT to range of addresses')
+                continue
+            else:
+                tr_dstIP = rule[1][2][0][0]
+        # srcPort
+        if rule[1][3] == []:
+            tr_dstPort = "id"
+        else:
+            if len(rule[1][3]) > 1 or rule[1][3][0][0] != rule[1][3][0][0]:
+                print('ERROR! This tool does not support NAT to range of addresses')
+                continue
+            else:
+                tr_dstPort = rule[1][3][0][0] 
+        
+        transformation = {"srcIP": tr_srcIP, "srcPort": tr_srcPort, "dstIP": tr_dstIP, "dstPort": tr_dstPort}
+        packets = rule[0][:]
+        for i in range(2):
+            for j in range(2):
+                if src_IPs[i] != [] and dst_IPs[j] != []:
+                    packets[0] = src_IPs[i]
+                    packets[2] = dst_IPs[j]
+                    verify(packets, transformation, firewall)
+
+def split(t, lbl):
+    if lbl == "ID":
+        t_a = {"srcIP": "id", "srcPort": "id", "dstIP": "id", "dstPort": "id"}
+        t_r = t
+    if lbl == "SNAT":
+        t_a = {"srcIP": t["srcIP"], "srcPort": t["srcPort"], "dstIP": "id", "dstPort": "id"}
+        t_r = {"srcIP": "id", "srcPort": "id", "dstIP": t["dstIP"], "dstPort": t["dstPort"]}
+    if lbl == "DNAT":
+        t_a = {"srcIP": "id", "srcPort": "id", "dstIP": t["dstIP"], "dstPort": t["dstPort"]}
+        t_r = {"srcIP": t["srcIP"], "srcPort": t["srcPort"], "dstIP": "id", "dstPort": "id"}
+    return (t_a, t_r)
+
+
+# XXX TODO occorre ordinare i field prima...
+def MC_intersec(P_a, tldP_a):
+    I = []
+    for i in range(len(P_a)):
+        P_a[i].sort(key=(lambda x : x[0]))
+        tldP_a[i].sort(key=(lambda x : x[0]))
+        field = field_intersec(P_a[i], tldP_a[i])
+        if field == []:
+            return "empty"
+        I.append(field)
+    return I
+
+
+def field_intersec(f1, f2):
+    # print(f1, f2)
+    if f1 == [] or f2 == []:
+        return []
+    elif f1[0][0] > f2[0][0]:
+        return field_intersec(f2, f1)
+    elif f1[0][1] < f2[0][0]:
+        return field_intersec(f1[1:], f2)
+    elif f1[0][1] <= f2[0][1]:
+        return [[f2[0][0], f1[0][1]]] + field_intersec(f1[1:], f2)
+    else:
+        return [[f2[0][0], f2[0][1]]] + field_intersec(f1, f2[1:])
+
+
+def inverse_t(t, Pa, P):
+    Pb = P[:]
+    if t["srcIP"] == "id":
+        Pb[0] = Pa[0]
+    if t["srcPort"] == "id":
+        Pb[1] = Pa[1]
+    if t["dstIP"] == "id":
+        Pb[2] = Pa[2]
+    if t["dstPort"] == "id":
+        Pb[3] = Pa[3]
+    return Pb
+
+
+def compose(t_a, t_l):
+    return {
+        "srcIP": compose_f(t_a["srcIP"], t_l["srcIP"]),
+        "srcPort": compose_f(t_a["srcPort"], t_l["srcPort"]),
+        "dstIP": compose_f(t_a["dstIP"], t_l["dstIP"]),
+        "dstPort": compose_f(t_a["dstPort"], t_l["dstPort"])
+    }
+
+
+def compose_f(t_a, t_l):
+    if t_a == "id":
+        return t_l
+    else:
+        return t_a
+
+
+def MC_apply_t(t, P):
+    P1 = P[:]
+    if t["srcIP"] != "id":
+        P1[0] = [[t["srcIP"], t["srcIP"]]]
+    if t["srcPort"] != "id":
+        P1[1] = [[t["srcPort"], t["srcPort"]]]
+    if t["dstIP"] != "id":
+        P1[2] = [[t["dstIP"], t["dstIP"]]]
+    if t["dstPort"] != "id":
+        P1[3] = [[t["dstPort"], t["dstPort"]]]
+    return P1
