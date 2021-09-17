@@ -7,13 +7,13 @@ F2F requires docker
 ### Installation
 Build the docker image 
 ```
-sudo docker build -t f2fcont .
+docker build -t f2fcont .
 ```
 the executable is `f2f`, that deals with the interaction with the docker application.
 
 ### Usage
 ```
-usage: f2f SOURCE-SYSTEM INTERFACE-FILE CONFIGURATION-FILE TARGET-SYSTEM
+usage: ./f2f SOURCE-SYSTEM INTERFACE-FILE CONFIGURATION-FILE TARGET-SYSTEM
 ```
 positional arguments:
 SOURCE-SYSTEM - the source firewall system, one between iptables, pf and ipfw
@@ -22,15 +22,10 @@ CONFIGURATION-FILE - the configuration file for the source firewall system
 TARGET-SYSTEM - the target firewall system, one between iptables, pf and ipfw
 
 ### Usage Examples
-```
-$ f2f iptables interface-file config-file ipfw
-```
-
-### Examples
 
 ```
 $ source venv/bin/activate
-$ f2f iptables Example/interfaces Example/iptables.conf ipfw
+$ ./f2f iptables Example/interfaces Example/iptables.conf ipfw
 Solving: [##################################################] (   36/   36) 100.00%
 
 
@@ -130,7 +125,7 @@ with [P@ || t1@ || t2@]:
 ```
 
 ```
-$ f2f iptables Example/interfaces Example/iptables.conf pf
+$ ./f2f iptables Example/interfaces Example/iptables.conf pf
 PROBLEM FOUND!
 
 
