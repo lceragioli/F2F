@@ -2,35 +2,19 @@ Firewall-2-Firewall
 =========
 
 ### Requirements
-* `Z3` theorem prover from Microsoft Research, version >= `4.4.0`
-* `GHC` the Glasgow Haskell Compiler, version >= `7.10.3`
-* `cabal-install` command line interface to Cabal and Hackage, version >= `1.22.6.0`
-* `python` Python language interpreter, version == 2.7.*
-* `virtualenv` tool to create isolated Python environments, version >= 15.1.0
-* `pip` tool for installing Python packages, version >= 9.0.1
+F2F requires docker
 
 ### Installation
-Install the required packages
+Build the docker image 
 ```
-sudo apt install z3 libz3-dev ghc cabal-install python-pip python-virtualenv
+sudo docker build -t f2fcont .
 ```
-Update cabal package list and make the virtual environment
-```
-cabal update
-chmod +x setup.py update_libs.sh f2f
-make
-```
-The libraries and executables are installed in the `venv` python virtual environment:
-```
-source venv/bin/activate
-```
-
-the executable is `f2f`.
+the executable is `f2f`, that deals with the interaction with the docker application.
 
 ### Usage
 ```
 usage: f2f SOURCE-SYSTEM INTERFACE-FILE CONFIGURATION-FILE TARGET-SYSTEM
-
+```
 positional arguments:
 SOURCE-SYSTEM - the source firewall system, one between iptables, pf and ipfw
 INTERFACE-FILE - interface specification file (see the axamples)
@@ -38,7 +22,7 @@ CONFIGURATION-FILE - the configuration file for the source firewall system
 TARGET-SYSTEM - the target firewall system, one between iptables, pf and ipfw
 
 ### Usage Examples
-$ source venv/bin/activate
+```
 $ f2f iptables interface-file config-file ipfw
 ```
 
