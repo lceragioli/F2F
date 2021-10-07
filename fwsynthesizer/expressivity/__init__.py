@@ -842,7 +842,7 @@ def check(semantics, target_system, interfaces):
     rules = semantics.get_rules()
 
     for rule in rules:
-        if rule[0][5] == [[1, 1]]:
+        if rule[0][7] == [[1, 1]]:
             # we do not consider enstablished connections
             continue
 
@@ -890,7 +890,7 @@ def check(semantics, target_system, interfaces):
                 tr_dstPort = rule[1][3][0][0] 
         
         transformation = {"srcIP": tr_srcIP, "srcPort": tr_srcPort, "dstIP": tr_dstIP, "dstPort": tr_dstPort}
-        packets = rule[0][:]
+        packets = rule[0][0:4] + rule[0][6:8]
         for i in range(2):
             for j in range(2):
                 if src_IPs[i] != [] and dst_IPs[j] != []:
