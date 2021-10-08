@@ -24,7 +24,6 @@ TARGET-SYSTEM - the target firewall system, one between iptables, pf and ipfw
 ### Usage Examples
 
 ```
-$ source venv/bin/activate
 $ ./f2f iptables Example/interfaces Example/iptables.conf ipfw
 Solving: [##################################################] (   36/   36) 100.00%
 
