@@ -130,14 +130,18 @@ class Control_diagram:
             #     print(foldl(lambda x, y: x + "\n" + str(y), "", step[0].content))
             # print(t_a)
             # print(t_l)
-            t_l = compose(t_a, t_l)
-            P_a = MC_apply_t(t_a, P_a)
+            if t_a != "DROP":
+                t_l = compose(t_a, t_l)
+                P_a = MC_apply_t(t_a, P_a)
         # print(len(self.content))
 
 
     def check(self, packet, transformation):
         for trace in self.traces():
             if self.check_trace(packet, transformation, trace):
+                # print(packet)
+                # print(transformation)
+                # print(print_trace(trace))
                 return [trace]
         return []
 
@@ -155,6 +159,15 @@ class Control_diagram:
         return False
 
     def traces(self, seen = set()):
+        alltraces = self.traces1(seen)
+        return filter(
+            lambda trace: 
+                trace[-1][1] != "DROP" or
+                all(lbl == "ID" or lbl == "DROP" for (n, lbl, phi) in trace),
+            alltraces
+        )
+
+    def traces1(self, seen = set()):
         traces = []
         nodechoices = []
         for label in self.labels:
@@ -474,8 +487,13 @@ def print_conflicting_pairs(P_x, tldP_x, t, tldt, node_name, P_ax, t_a, tldt_a):
     print("with [P@ || t1@ || t2@]:")
     print_rule_conflict(P_ax, t_a, tldt_a)
 
-
 def print_rule(packets, transformation):
+    if transformation != "DROP":
+        print_rule_accept(packets, transformation)
+    else:
+        print_rule_drop(packets, transformation)
+
+def print_rule_accept(packets, transformation):
     row = [["sIp"], ["sPort"], ["dIp"], ["dPort"], ["prot"],
            ["tr_src"], ["tr_dst"]]
     
@@ -568,9 +586,81 @@ def print_rule(packets, transformation):
             print("=" * (sum(width) + 11))
 
 
-def print_rule_conflict(packets, transformation1, transformation2):
+def print_rule_drop(packets, transformation):
     row = [["sIp"], ["sPort"], ["dIp"], ["dPort"], ["prot"],
-           ["tr1_src"], ["tr1_dst"], ["tr2_src"], ["tr2_dst"]]
+           ["tr"]]
+    
+    src_segments = packets[0]
+    dst_segments = packets[2]
+
+    if packets[4] == [[18, 255], [0, 16]]:
+        row[4].append("* \ {udp}")
+    elif packets[4] == [[7, 255], [0, 5]]:
+        row[4].append("* \ {tcp}")
+    elif packets[4] == [[18, 255], [7, 16], [0, 5]]:
+        row[4].append("* \ {tcp, udp}")
+    else:
+        row[4] += [print_prot_range(r) for r in packets[4]]
+
+    # plus one because of the header line
+    line_num = max([len(list_of_segments) + 1 for list_of_segments in
+                   [packets[1]] + [row[4]] + [src_segments, dst_segments]])
+
+    for line in range(line_num):
+        if len(src_segments) > line:
+            row[0].append(print_ip_range(src_segments[line]))
+        else:
+            row[0].append("")
+
+        if len(packets[1]) > line:
+            row[1].append(print_port_range(packets[1][line]))
+        else:
+            row[1].append("")
+
+        if len(dst_segments) > line:
+            row[2].append(print_ip_range(dst_segments[line]))
+        else:
+            row[2].append("")
+
+        if len(packets[3]) > line:
+            row[3].append(print_port_range(packets[3][line]))
+        else:
+            row[3].append("")
+
+        if len(row[4]) <= line:
+            row[4].append("")
+
+        if line == 0:
+            tr_string = "DROP" 
+            row[5].append(tr_string)
+        else:
+            row[5].append("")
+
+    width = [0]*6
+    for i in range(6):
+        width[i] = max([len(field) + 2 for field in row[i]])
+
+    print("=" * (sum(width) + 10))
+    for line in range(line_num):
+        sys.stdout.write("||")
+        for field in range(6):
+            sys.stdout.write(row[field][line].center(width[field]))
+            sys.stdout.write("|")
+            if field == 4 or field == 5:
+                sys.stdout.write("|")
+        print("")
+        if line == 0 or line == line_num - 1:
+            print("=" * (sum(width) + 10))
+
+
+def print_rule_conflict(packets, transformation1, transformation2):
+    row = [["sIp"], ["sPort"], ["dIp"], ["dPort"], ["prot"]]
+    if transformation1 == "DROP":
+        row = row + [["tr1"]]
+    else: row = row + [["tr1_src"], ["tr1_dst"]]
+    if transformation2 == "DROP":
+        row = row + [["tr2"]]
+    else: row = row + [["tr2_src"], ["tr2_dst"]]
 
     src_segments = packets[0]
     dst_segments = packets[2]
@@ -617,68 +707,82 @@ def print_rule_conflict(packets, transformation1, transformation2):
             row[4].append("")
 
         if line == 0:
-            tr_src_string = ""
-            if transformation1["srcIP"] != "id":
-                tr_src_string += print_ip_range([transformation1["srcIP"], transformation1["srcIP"]])
+            col = 5
+            if transformation1 == "DROP":
+                row[col].append("DROP")
+                col = col + 1
             else:
-                tr_src_string += "id"
-            tr_src_string += " : "
-            if transformation1["srcPort"] != "id":
-                tr_src_string += print_port_range([transformation1["srcPort"], transformation1["srcPort"]])
-            else:
-                tr_src_string += "id"
-            row[5].append(tr_src_string)
+                tr_src_string = ""
+                if transformation1["srcIP"] != "id":
+                    tr_src_string += print_ip_range([transformation1["srcIP"], transformation1["srcIP"]])
+                else:
+                    tr_src_string += "id"
+                tr_src_string += " : "
+                if transformation1["srcPort"] != "id":
+                    tr_src_string += print_port_range([transformation1["srcPort"], transformation1["srcPort"]])
+                else:
+                    tr_src_string += "id"
+                row[col].append(tr_src_string)
+                col = col + 1
 
-            tr_dst_string = ""
-            if transformation1["dstIP"] != "id":
-                tr_dst_string += print_ip_range([transformation1["dstIP"], transformation1["dstIP"]])
-            else:
-                tr_dst_string += "id"
-            tr_dst_string += " : "
-            if transformation1["dstPort"] != "id":
-                tr_dst_string += print_port_range([transformation1["dstPort"], transformation1["dstPort"]])
-            else:
-                tr_dst_string += "id"
-            row[6].append(tr_dst_string)
+                tr_dst_string = ""
+                if transformation1["dstIP"] != "id":
+                    tr_dst_string += print_ip_range([transformation1["dstIP"], transformation1["dstIP"]])
+                else:
+                    tr_dst_string += "id"
+                tr_dst_string += " : "
+                if transformation1["dstPort"] != "id":
+                    tr_dst_string += print_port_range([transformation1["dstPort"], transformation1["dstPort"]])
+                else:
+                    tr_dst_string += "id"
+                row[col].append(tr_dst_string)
+                col = col + 1
 
-            tr_src_string = ""
-            if transformation2["srcIP"] != "id":
-                tr_src_string += print_ip_range([transformation2["srcIP"], transformation2["srcIP"]])
+            tr1_tr2_sep = col -1
+            if transformation2 == "DROP":
+                row[col].append("DROP")
+                col = col + 1
             else:
-                tr_src_string += "id"
-            tr_src_string += " : "
-            if transformation2["srcPort"] != "id":
-                tr_src_string += print_port_range([transformation2["srcPort"], transformation2["srcPort"]])
-            else:
-                tr_src_string += "id"
-            row[7].append(tr_src_string)
+                tr_src_string = ""
+                if transformation2["srcIP"] != "id":
+                    tr_src_string += print_ip_range([transformation2["srcIP"], transformation2["srcIP"]])
+                else:
+                    tr_src_string += "id"
+                tr_src_string += " : "
+                if transformation2["srcPort"] != "id":
+                    tr_src_string += print_port_range([transformation2["srcPort"], transformation2["srcPort"]])
+                else:
+                    tr_src_string += "id"
+                row[col].append(tr_src_string)
+                col = col + 1
 
-            tr_dst_string = ""
-            if transformation2["dstIP"] != "id":
-                tr_dst_string += print_ip_range([transformation2["dstIP"], transformation2["dstIP"]])
-            else:
-                tr_dst_string += "id"
-            tr_dst_string += " : "
-            if transformation2["dstPort"] != "id":
-                tr_dst_string += print_port_range([transformation2["dstPort"], transformation2["dstPort"]])
-            else:
-                tr_dst_string += "id"
-            row[8].append(tr_dst_string)
+                tr_dst_string = ""
+                if transformation2["dstIP"] != "id":
+                    tr_dst_string += print_ip_range([transformation2["dstIP"], transformation2["dstIP"]])
+                else:
+                    tr_dst_string += "id"
+                tr_dst_string += " : "
+                if transformation2["dstPort"] != "id":
+                    tr_dst_string += print_port_range([transformation2["dstPort"], transformation2["dstPort"]])
+                else:
+                    tr_dst_string += "id"
+                row[col].append(tr_dst_string)
+                col = col + 1
         else:
-            for i in range(5, 9):
+            for i in range(5, len(row)):
                 row[i].append("")
 
-    width = [0] * 9
-    for i in range(9):
+    width = [0] * len(row)
+    for i in range(len(row)):
         width[i] = max([len(field) + 2 for field in row[i]])
 
     print("=" * (sum(width) + 14))
     for line in range(line_num):
         sys.stdout.write("||")
-        for field in range(9):
+        for field in range(len(row)):
             sys.stdout.write(row[field][line].center(width[field]))
             sys.stdout.write("|")
-            if field == 4 or field == 6 or field == 8:
+            if field == 4 or field == tr1_tr2_sep or field == len(row)-1:
                 sys.stdout.write("|")
         print("")
         if line == 0 or line == line_num - 1:
@@ -839,7 +943,7 @@ def check(semantics, target_system, interfaces):
         firewall = PF_firewall()
     
     self_addresses = [dot_to_integer_ip(v[1]) for v in interfaces.values()]
-    rules = semantics.get_rules()
+    rules = semantics.get_rules_no_duplicates()
 
     for rule in rules:
         if rule[0][7] == [[1, 1]]:
@@ -896,9 +1000,36 @@ def check(semantics, target_system, interfaces):
                 if src_IPs[i] != [] and dst_IPs[j] != []:
                     packets[0] = src_IPs[i]
                     packets[2] = dst_IPs[j]
+                    # print_rule(packets, transformation)
+                    verify(packets, transformation, firewall)
+
+    rules = semantics.get_drop_rules_no_duplicates()
+
+    for rule in rules:
+        if rule[0][7] == [[1, 1]]:
+            # we do not consider enstablished connections
+            continue
+
+        normalize_rule(rule)
+        # split based on selfness of addresses
+        IP_types = [IP.LOCAL, IP.NON_LOCAL]
+        src_IPs = intersect_diff(rule[0][0], self_addresses)
+        dst_IPs = intersect_diff(rule[0][2], self_addresses)
+        # check each resulting rule
+        # srcIP
+        packets = rule[0][0:4] + rule[0][6:8]
+        transformation = "DROP"
+        for i in range(2):
+            for j in range(2):
+                if src_IPs[i] != [] and dst_IPs[j] != []:
+                    packets[0] = src_IPs[i]
+                    packets[2] = dst_IPs[j]
+                    # print_rule(packets, transformation)
                     verify(packets, transformation, firewall)
 
 def split(t, lbl):
+    # print(t)
+    # print(lbl)
     if lbl == "ID":
         t_a = {"srcIP": "id", "srcPort": "id", "dstIP": "id", "dstPort": "id"}
         t_r = t
@@ -908,6 +1039,9 @@ def split(t, lbl):
     if lbl == "DNAT":
         t_a = {"srcIP": "id", "srcPort": "id", "dstIP": t["dstIP"], "dstPort": t["dstPort"]}
         t_r = {"srcIP": t["srcIP"], "srcPort": t["srcPort"], "dstIP": "id", "dstPort": "id"}
+    if lbl == "DROP":
+        t_a = "DROP"
+        t_r = None
     return (t_a, t_r)
 
 

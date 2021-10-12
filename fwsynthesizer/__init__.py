@@ -79,6 +79,25 @@ def import_frontend(name):
     else:
         raise RuntimeError("Invalid Frontend '{}'!".format(name))
 
+def segment_set_union(set1, set2):
+    if set1 == []:
+        return set2
+    if set2 == []:
+        return set1
+    # there is an intersection and they are not adjacent
+    if (set1[0][0] <= set2[0][0] and set1[0][1] >= set2[0][0] - 1) or \
+        (set2[0][0] <= set1[0][0] and set2[0][1] >= set1[0][0] - 1):
+            if set1[0][1] > set2[0][1]:
+                return segment_set_union([[min(set1[0][0], set2[0][0]), set1[0][1]]] + set1[1:], set2[1:])
+            else:
+                return segment_set_union(set1[1:], [[min(set1[0][0], set2[0][0]), set2[0][1]]] + set2[1:])
+    # else there is no intersection
+    if set1[0][0] <= set2[0][0]:
+        return set1[:1] + segment_set_union(set1[1:], set2)
+    else:
+        return set2[:1] + segment_set_union(set1, set2[1:])
+
+
 ################################################################################
 # FRONTEND
 
@@ -176,7 +195,8 @@ class Firewall:
         """
 
         rules = Synthesis.synthesize(self.__fw, self.locals, local_src, local_dst, query)
-        return SynthesisOutput(self, rules)
+        droprules = Synthesis.synthesize_drop(self.__fw, self.locals, local_src, local_dst, query)
+        return SynthesisOutput(self, rules, droprules)
 
     def implication(self, other, local_src=LocalFlag.BOTH, local_dst=LocalFlag.BOTH, query="true"):
         """
@@ -225,14 +245,99 @@ class Firewall:
 class SynthesisOutput:
     "Firewall synthesis output"
 
-    def __init__(self, fw, rules):
+    def __init__(self, fw, rules, droprules):
         self.firewall = fw
         self.__rules = rules
+        self.__droprules = droprules
 
     def get_rules(self):
         "Get the rules as lists of ints"
         return [ Synthesis.mrule_list(r) for r in self.__rules ]
 
+    def get_drop_rules(self):
+        "Get the rules as lists of ints"
+        return [ Synthesis.mrule_list(r) for r in self.__droprules ]
+
+    def get_rules_no_duplicates(self):
+        rules = [Synthesis.mrule_list(r) for r in self.__rules]
+
+        for rule in rules:
+            for pkt in rule:
+                for field in pkt:
+                    field.sort()
+        change = True
+        while change:
+            change = False
+            i = 0
+            while i < len(rules) - 1:
+                j = i + 1
+                while j < len(rules):
+
+                    if rules[i][1] != rules[j][1]:
+                        j = j + 1
+                        continue
+                    diff = None
+                    for z in range(0, len(rules[i][0])):
+                        if rules[i][0][z] != rules[j][0][z]:
+                            if diff is not None:
+                                diff = None
+                                break
+                            diff = z
+                    #  When I make the union, len change and also my position
+                    if diff is not None:
+                        change = True
+                        rules[i][0][diff].sort()
+                        rules[j][0][diff].sort()
+                        union_z = segment_set_union(rules[i][0][diff], rules[j][0][diff])
+                        rules[i][0][diff] = union_z
+                        del rules[j]
+                        j = i + 1
+                    else:
+                        j = j + 1
+                i = i + 1
+        return [[pin, pout] for pin, pout in rules]
+
+    def get_drop_rules_no_duplicates(self):
+        "Get the rules as lists of ints"
+        rules = [Synthesis.mrule_list(r) for r in self.__droprules]
+
+        for rule in rules:
+            for pkt in rule:
+                for field in pkt:
+                    field.sort()
+        change = True
+        while change:
+            change = False
+            i = 0
+            while i < len(rules) - 1:
+                j = i + 1
+                while j < len(rules):
+
+                    diff = -1
+                    for z in range(0, len(rules[i][0])):
+                        if rules[i][0][z] != rules[j][0][z]:
+                            if diff > -1:
+                                # print(z)
+                                diff = -2
+                                break
+                            diff = z
+                    #  When I make the union, len change and also my position
+                    if diff > -1:
+                        change = True
+                        rules[i][0][diff].sort()
+                        rules[j][0][diff].sort()
+                        union_z = segment_set_union(rules[i][0][diff], rules[j][0][diff])
+                        rules[i][0][diff] = union_z
+                        del rules[j]
+                    elif diff == -1:
+                        del rules[j]
+                    else:
+                        diff = -1
+                        j = j + 1
+                i = i + 1
+        return [[pin, pout] for pin, pout in rules]
+
+    
     def print_table(self, table_style=TableStyle.UNICODE, local_src=LocalFlag.BOTH,
                     local_dst=LocalFlag.BOTH, nat=NatFlag.ALL):
         """

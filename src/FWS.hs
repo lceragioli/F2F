@@ -22,6 +22,7 @@ module FWS (
   , synthesizeFirewall
   , synthesizeDiff
   , synthesizeND
+  , synthesizeDrop
   , policyImplication
   , policyEquivalence
   -- * Firewalls
@@ -275,6 +276,34 @@ dropPredicates Firewall{..} pin = go initialState [] pin
                     $ \(_, phi, st') ->  map (And $ phi newp) <$> go st' (st:states) newp
 
                 return $ concatMap (map (\x -> Or drop (And constp x))) ns
+
+-- | Extract dropped packets from a firewall
+synthesizeDrop :: Ord t => [Integer] -> LocalFlag -> LocalFlag -> String -> Firewall t -> IO [MRule]
+synthesizeDrop locals locsrc locdst queryStr fw = do
+  let (p, formulas, drops) = flip runGenPacket 0 $ (,,)
+                   <$> mkFreshPacket
+                   <*> dropPredicates fw p
+                   <*> dropPredicates fw p
+
+  evalZ3Model $ concat <$> (forM (zip3 formulas drops [1..]) $ \(pred, drop, n) -> do
+    let pvars = map fst $ sortOn snd $ M.assocs $ formulaVarsCount pred
+    let dvars = map fst $ sortOn snd $ M.assocs $ formulaVarsCount drop
+    let vvars = map fst $ sortOn snd $ M.assocs $ formulaVarsCount (And pred drop)
+
+    let pout  = getPout p pvars -- accepted packet
+    let dout  = getPout p dvars -- dropped packet
+
+    let qpred = And (query (p,pout)) pred
+    (frm, vm) <- z3Predicate (And qpred drop) $ Just vvars
+
+    printProgress n (length formulas)
+    debug $ "+ Subst:"
+
+    cubes <- allBVSat' frm $ map (vm M.!) vvars
+    forM cubes $ \c -> do
+      return $ mkMRule (instantiate vvars c p) (instantiate vvars c dout))
+  where
+    query = mkLocalsQuery queryStr locals locsrc locdst
 
 
 -- | Extract non-deterministically dropped packets from a firewall

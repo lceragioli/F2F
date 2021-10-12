@@ -53,6 +53,11 @@ synthesize firewall locals localSrc' localDst' query =
   SY.synthesizeFirewall (U.parseIPs locals) localSrc localDst query (getFiewall firewall)
   where (localSrc, localDst) = (getLocal localSrc', getLocal localDst')
 
+synthesize_drop :: Firewall -> [String] -> Int -> Int -> String -> IO [SY.MRule]
+synthesize_drop firewall locals localSrc' localDst' query =
+  SY.synthesizeDrop (U.parseIPs locals) localSrc localDst query (getFiewall firewall)
+  where (localSrc, localDst) = (getLocal localSrc', getLocal localDst')
+
 synthesize_nd :: Firewall -> [String] -> Int -> Int -> String -> IO [SY.MRule]
 synthesize_nd firewall locals localSrc' localDst' query =
   SY.synthesizeND  (U.parseIPs locals) localSrc localDst query (getFiewall firewall)
@@ -88,6 +93,7 @@ initHaPy
 pythonExport 'mrule_list
 pythonExport 'synthesize
 pythonExport 'synthesize_nd
+pythonExport 'synthesize_drop
 pythonExport 'make_firewall
 pythonExport 'implication
 pythonExport 'equivalence
