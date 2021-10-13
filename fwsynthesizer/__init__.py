@@ -98,6 +98,18 @@ def segment_set_union(set1, set2):
         return set2[:1] + segment_set_union(set1, set2[1:])
 
 
+def normalize_rule(rule):
+    for range in rule[0][0] + rule[0][2] + rule[1][0] + rule[1][2]:
+        range[0] = normalize_ip(range[0])
+        range[1] = normalize_ip(range[1])
+
+
+def normalize_ip(ip):
+    if ip < 0:
+        return (4294967296 + ip) % 4294967296
+    return ip
+
+
 ################################################################################
 # FRONTEND
 
@@ -259,12 +271,58 @@ class SynthesisOutput:
         return [ Synthesis.mrule_list(r) for r in self.__droprules ]
 
     def get_rules_no_duplicates(self):
-        rules = [Synthesis.mrule_list(r) for r in self.__rules]
+        FWS_rules = [Synthesis.mrule_list(r) for r in self.__rules]
+        rules = []
 
-        for rule in rules:
+        for rule in FWS_rules:
             for pkt in rule:
                 for field in pkt:
                     field.sort()
+            normalize_rule(rule)
+            if rule[0][7] == [[1, 1]]:
+                del rule
+                continue
+
+            if rule[1][0] == []:
+                tr_srcIP = "id"
+            else:
+                if len(rule[1][0]) > 1 or rule[1][0][0][0] != rule[1][0][0][0]:
+                    print('ERROR! This tool does not support NAT to range of addresses')
+                    continue
+                else:
+                    tr_srcIP = rule[1][0][0][0]
+            # srcPort
+            if rule[1][1] == []:
+                tr_srcPort = "id"
+            else:
+                if len(rule[1][1]) > 1 or rule[1][1][0][0] != rule[1][1][0][0]:
+                    print('ERROR! This tool does not support NAT to range of addresses')
+                    continue
+                else:
+                    tr_srcPort = rule[1][1][0][0] 
+            # dstIP
+            if rule[1][2] == []:
+                tr_dstIP = "id"
+            else:
+                if len(rule[1][2]) > 1 or rule[1][2][0][0] != rule[1][2][0][0]:
+                    print('ERROR! This tool does not support NAT to range of addresses')
+                    continue
+                else:
+                    tr_dstIP = rule[1][2][0][0]
+            # srcPort
+            if rule[1][3] == []:
+                tr_dstPort = "id"
+            else:
+                if len(rule[1][3]) > 1 or rule[1][3][0][0] != rule[1][3][0][0]:
+                    print('ERROR! This tool does not support NAT to range of addresses')
+                    continue
+                else:
+                    tr_dstPort = rule[1][3][0][0] 
+            
+            transformation = {"srcIP": tr_srcIP, "srcPort": tr_srcPort, "dstIP": tr_dstIP, "dstPort": tr_dstPort}
+            packets = rule[0][0:4] + [rule[0][6]]
+            rules = rules + [[packets, transformation]]
+
         change = True
         while change:
             change = False
@@ -295,16 +353,27 @@ class SynthesisOutput:
                     else:
                         j = j + 1
                 i = i + 1
-        return [[pin, pout] for pin, pout in rules]
+        return rules
 
     def get_drop_rules_no_duplicates(self):
         "Get the rules as lists of ints"
-        rules = [Synthesis.mrule_list(r) for r in self.__droprules]
+        FWS_rules = [Synthesis.mrule_list(r) for r in self.__droprules]
 
-        for rule in rules:
+        rules = []
+
+        for rule in FWS_rules:
             for pkt in rule:
                 for field in pkt:
                     field.sort()
+            normalize_rule(rule)
+            if rule[0][7] == [[1, 1]]:
+                del rule
+                continue
+          
+            transformation = "DROP"
+            packets = rule[0][0:4] + [rule[0][6]]
+            rules = rules + [[packets, transformation]]
+
         change = True
         while change:
             change = False
@@ -351,6 +420,41 @@ class SynthesisOutput:
         """
         Synthesis.mrule_table(self.__rules, table_style,
                               self.firewall.locals, local_src, local_dst, nat)
+
+    def get_packets(self):
+        rules = self.get_drop_rules_no_duplicates() + self.get_rules_no_duplicates()
+        rules = [[rule[0], "DROP"] for rule in rules]
+        change = True
+        while change:
+            change = False
+            i = 0
+            while i < len(rules) - 1:
+                j = i + 1
+                while j < len(rules):
+
+                    diff = -1
+                    for z in range(0, len(rules[i][0])):
+                        if rules[i][0][z] != rules[j][0][z]:
+                            if diff > -1:
+                                # print(z)
+                                diff = -2
+                                break
+                            diff = z
+                    #  When I make the union, len change and also my position
+                    if diff > -1:
+                        change = True
+                        rules[i][0][diff].sort()
+                        rules[j][0][diff].sort()
+                        union_z = segment_set_union(rules[i][0][diff], rules[j][0][diff])
+                        rules[i][0][diff] = union_z
+                        del rules[j]
+                    elif diff == -1:
+                        del rules[j]
+                    else:
+                        diff = -1
+                        j = j + 1
+                i = i + 1
+        return rules
 
 
 class DiffOutput:

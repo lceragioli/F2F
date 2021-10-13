@@ -789,24 +789,6 @@ def print_rule_conflict(packets, transformation1, transformation2):
             print("=" * (sum(width) + 14))
 
 
-def normalize_rule(rule):
-    for range in rule[0][0] + rule[0][2] + rule[1][0] + rule[1][2]:
-        range[0] = normalize_ip(range[0])
-        range[1] = normalize_ip(range[1])
-
-
-def normalize_ip(ip):
-    if ip < 0:
-        return (4294967296 + ip) % 4294967296
-    return ip
-
-
-def print_ip(ip):
-    if ip < 0:
-        ip = (4294967296 + ip) % 4294967296
-    return integer_to_dot_ip(ip)
-
-
 def print_port(port):
     return str(port)
 
@@ -943,58 +925,21 @@ def check(semantics, target_system, interfaces):
         firewall = PF_firewall()
     
     self_addresses = [dot_to_integer_ip(v[1]) for v in interfaces.values()]
-    rules = semantics.get_rules_no_duplicates()
+    accept_rules = semantics.get_rules_no_duplicates()
+    drop_rules = semantics.get_drop_rules_no_duplicates()
+    print_rules(accept_rules, drop_rules)
 
-    for rule in rules:
-        if rule[0][7] == [[1, 1]]:
-            # we do not consider enstablished connections
-            continue
+    checkrules = semantics.get_packets()
+    print_rules([], checkrules)
 
-        normalize_rule(rule)
+    for rule in accept_rules + drop_rules:
         # split based on selfness of addresses
+        packets = rule[0]
+        transformation = rule[1]
         IP_types = [IP.LOCAL, IP.NON_LOCAL]
         src_IPs = intersect_diff(rule[0][0], self_addresses)
         dst_IPs = intersect_diff(rule[0][2], self_addresses)
         # check each resulting rule
-        # srcIP
-        if rule[1][0] == []:
-            tr_srcIP = "id"
-        else:
-            if len(rule[1][0]) > 1 or rule[1][0][0][0] != rule[1][0][0][0]:
-                print('ERROR! This tool does not support NAT to range of addresses')
-                continue
-            else:
-                tr_srcIP = rule[1][0][0][0]
-        # srcPort
-        if rule[1][1] == []:
-            tr_srcPort = "id"
-        else:
-            if len(rule[1][1]) > 1 or rule[1][1][0][0] != rule[1][1][0][0]:
-                print('ERROR! This tool does not support NAT to range of addresses')
-                continue
-            else:
-                tr_srcPort = rule[1][1][0][0] 
-        # dstIP
-        if rule[1][2] == []:
-            tr_dstIP = "id"
-        else:
-            if len(rule[1][2]) > 1 or rule[1][2][0][0] != rule[1][2][0][0]:
-                print('ERROR! This tool does not support NAT to range of addresses')
-                continue
-            else:
-                tr_dstIP = rule[1][2][0][0]
-        # srcPort
-        if rule[1][3] == []:
-            tr_dstPort = "id"
-        else:
-            if len(rule[1][3]) > 1 or rule[1][3][0][0] != rule[1][3][0][0]:
-                print('ERROR! This tool does not support NAT to range of addresses')
-                continue
-            else:
-                tr_dstPort = rule[1][3][0][0] 
-        
-        transformation = {"srcIP": tr_srcIP, "srcPort": tr_srcPort, "dstIP": tr_dstIP, "dstPort": tr_dstPort}
-        packets = rule[0][0:4] + rule[0][6:8]
         for i in range(2):
             for j in range(2):
                 if src_IPs[i] != [] and dst_IPs[j] != []:
@@ -1003,29 +948,6 @@ def check(semantics, target_system, interfaces):
                     # print_rule(packets, transformation)
                     verify(packets, transformation, firewall)
 
-    rules = semantics.get_drop_rules_no_duplicates()
-
-    for rule in rules:
-        if rule[0][7] == [[1, 1]]:
-            # we do not consider enstablished connections
-            continue
-
-        normalize_rule(rule)
-        # split based on selfness of addresses
-        IP_types = [IP.LOCAL, IP.NON_LOCAL]
-        src_IPs = intersect_diff(rule[0][0], self_addresses)
-        dst_IPs = intersect_diff(rule[0][2], self_addresses)
-        # check each resulting rule
-        # srcIP
-        packets = rule[0][0:4] + rule[0][6:8]
-        transformation = "DROP"
-        for i in range(2):
-            for j in range(2):
-                if src_IPs[i] != [] and dst_IPs[j] != []:
-                    packets[0] = src_IPs[i]
-                    packets[2] = dst_IPs[j]
-                    # print_rule(packets, transformation)
-                    verify(packets, transformation, firewall)
 
 def split(t, lbl):
     # print(t)
@@ -1112,3 +1034,212 @@ def MC_apply_t(t, P):
     if t["dstPort"] != "id":
         P1[3] = [[t["dstPort"], t["dstPort"]]]
     return P1
+
+
+def print_rules(acceptrules, droprules):
+    print_rules_accept(acceptrules)
+    print_rules_drop(droprules)
+
+
+def print_rules_accept(rules):
+    rows = [[
+                [["sIp"], ["sPort"], ["dIp"], ["dPort"], ["prot"],
+                ["tr_src"], ["tr_dst"]], 
+                1
+            ]]
+
+    width = [len(x[0]) for x in rows[0][0]]
+    
+
+    for rule in rules:
+        # print(rule)
+        row = [[] for x in range(7)]
+        packets = rule[0]
+        transformation = rule[1]
+
+        src_segments = packets[0]
+        dst_segments = packets[2]
+
+        if packets[4] == [[18, 255], [0, 16]]:
+            row[4].append("* \ {udp}")
+        elif packets[4] == [[7, 255], [0, 5]]:
+            row[4].append("* \ {tcp}")
+        elif packets[4] == [[18, 255], [7, 16], [0, 5]]:
+            row[4].append("* \ {tcp, udp}")
+        else:
+            row[4] += [print_prot_range(r) for r in packets[4]]
+
+        # plus one because of the header line
+        line_num = max([len(list_of_segments) + 1 for list_of_segments in
+                    [packets[1]] + [packets[3]] + [row[4]] + [src_segments, dst_segments]])
+        # print(row_num)
+        # print(packets)
+        # print(src_segments)
+        # print(dst_segments)
+
+        for line in range(line_num):
+            # print(row)
+            if len(src_segments) > line:
+                row[0].append(print_ip_range(src_segments[line]))
+            else:
+                row[0].append("")
+
+            if len(packets[1]) > line:
+                row[1].append(print_port_range(packets[1][line]))
+            else:
+                row[1].append("")
+
+            if len(dst_segments) > line:
+                row[2].append(print_ip_range(dst_segments[line]))
+            else:
+                row[2].append("")
+
+            if len(packets[3]) > line:
+                row[3].append(print_port_range(packets[3][line]))
+            else:
+                row[3].append("")
+
+            if len(row[4]) <= line:
+                row[4].append("")
+
+            if line == 0:
+                tr_src_string = "" 
+                if transformation["srcIP"] != "id":
+                    tr_src_string += print_ip_range([transformation["srcIP"], transformation["srcIP"]])
+                else:
+                    tr_src_string += "id"
+                tr_src_string += " : "
+                if transformation["srcPort"] != "id":
+                    tr_src_string += print_port_range([transformation["srcPort"], transformation["srcPort"]])
+                else:
+                    tr_src_string += "id"
+                row[5].append(tr_src_string)
+
+                tr_dst_string = ""
+                if transformation["dstIP"] != "id":
+                    tr_dst_string += print_ip_range([transformation["dstIP"], transformation["dstIP"]])
+                else:
+                    tr_dst_string += "id"
+                tr_dst_string += " : "
+                if transformation["dstPort"] != "id":
+                    tr_dst_string += print_port_range([transformation["dstPort"], transformation["dstPort"]])
+                else:
+                    tr_dst_string += "id"
+                row[6].append(tr_dst_string)
+            else:
+                for i in range(5, 7):
+                    row[i].append("")
+
+        for i in range(7):
+            width[i] = max(width[i], max([len(field) + 2 for field in row[i]]))
+        
+        rows.append([row, line_num])
+
+    # print(rows)
+    print("=" * (sum(width) + 11))
+    for rowlin in rows:
+        row = rowlin[0]
+        line_num = rowlin[1]
+        for line in range(line_num):
+            sys.stdout.write("||")
+            for field in range(7):
+                sys.stdout.write(row[field][line].center(width[field]))
+                sys.stdout.write("|")
+                if field == 4 or field == 6:
+                    sys.stdout.write("|")
+            print("")
+        print("-" * (sum(width) + 11))
+
+
+
+def print_rules_drop(rules):
+    rows = [[
+                [["sIp"], ["sPort"], ["dIp"], ["dPort"], ["prot"],
+                ["tr"]], 
+                1
+            ]]
+
+    width = [len(x[0]) for x in rows[0][0]]
+    
+
+    for rule in rules:
+        # print(rule)
+        row = [[] for x in range(6)]
+        packets = rule[0]
+        transformation = rule[1]
+
+        src_segments = packets[0]
+        dst_segments = packets[2]
+
+        if packets[4] == [[18, 255], [0, 16]]:
+            row[4].append("* \ {udp}")
+        elif packets[4] == [[7, 255], [0, 5]]:
+            row[4].append("* \ {tcp}")
+        elif packets[4] == [[18, 255], [7, 16], [0, 5]]:
+            row[4].append("* \ {tcp, udp}")
+        else:
+            row[4] += [print_prot_range(r) for r in packets[4]]
+
+        # plus one because of the header line
+        line_num = max([len(list_of_segments) + 1 for list_of_segments in
+                    [packets[1]] + [packets[3]] + [row[4]] + [src_segments, dst_segments]])
+        # print(row_num)
+        # print(packets)
+        # print(src_segments)
+        # print(dst_segments)
+
+        for line in range(line_num):
+            # print(row)
+            if len(src_segments) > line:
+                row[0].append(print_ip_range(src_segments[line]))
+            else:
+                row[0].append("")
+
+            if len(packets[1]) > line:
+                row[1].append(print_port_range(packets[1][line]))
+            else:
+                row[1].append("")
+
+            if len(dst_segments) > line:
+                row[2].append(print_ip_range(dst_segments[line]))
+            else:
+                row[2].append("")
+
+            if len(packets[3]) > line:
+                row[3].append(print_port_range(packets[3][line]))
+            else:
+                row[3].append("")
+
+            if len(row[4]) <= line:
+                row[4].append("")
+
+            if line == 0:
+                row[5].append("DROP")
+            else:
+                row[5].append("")
+
+        for i in range(6):
+            width[i] = max(width[i], max([len(field) + 2 for field in row[i]]))
+        
+        rows.append([row, line_num])
+
+    # print(rows)
+    print("=" * (sum(width) + 11))
+    for rowlin in rows:
+        row = rowlin[0]
+        line_num = rowlin[1]
+        for line in range(line_num):
+            sys.stdout.write("||")
+            for field in range(6):
+                sys.stdout.write(row[field][line].center(width[field]))
+                sys.stdout.write("|")
+                if field == 4:
+                    sys.stdout.write("|")
+            print("")
+        print("-" * (sum(width) + 11))
+
+
+def print_ip(ip):
+    if ip < 0:
+        ip = (4294967296 + ip) % 4294967296
+    return integer_to_dot_ip(ip)
