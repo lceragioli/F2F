@@ -929,8 +929,8 @@ def check(semantics, target_system, interfaces):
     drop_rules = semantics.get_drop_rules_no_duplicates()
     print_rules(accept_rules, drop_rules)
 
-    checkrules = semantics.get_packets()
-    print_rules([], checkrules)
+    # checkrules = semantics.get_packets()
+    # print_rules([], checkrules)
 
     for rule in accept_rules + drop_rules:
         # split based on selfness of addresses

@@ -280,7 +280,6 @@ class SynthesisOutput:
                     field.sort()
             normalize_rule(rule)
             if rule[0][7] == [[1, 1]]:
-                del rule
                 continue
 
             if rule[1][0] == []:
@@ -349,7 +348,6 @@ class SynthesisOutput:
                         union_z = segment_set_union(rules[i][0][diff], rules[j][0][diff])
                         rules[i][0][diff] = union_z
                         del rules[j]
-                        j = i + 1
                     else:
                         j = j + 1
                 i = i + 1
@@ -367,7 +365,6 @@ class SynthesisOutput:
                     field.sort()
             normalize_rule(rule)
             if rule[0][7] == [[1, 1]]:
-                del rule
                 continue
           
             transformation = "DROP"
@@ -382,29 +379,26 @@ class SynthesisOutput:
                 j = i + 1
                 while j < len(rules):
 
-                    diff = -1
+                    diff = None
                     for z in range(0, len(rules[i][0])):
                         if rules[i][0][z] != rules[j][0][z]:
-                            if diff > -1:
+                            if diff is not None:
                                 # print(z)
-                                diff = -2
+                                diff = None
                                 break
                             diff = z
                     #  When I make the union, len change and also my position
-                    if diff > -1:
+                    if diff is not None:
                         change = True
                         rules[i][0][diff].sort()
                         rules[j][0][diff].sort()
                         union_z = segment_set_union(rules[i][0][diff], rules[j][0][diff])
                         rules[i][0][diff] = union_z
                         del rules[j]
-                    elif diff == -1:
-                        del rules[j]
                     else:
-                        diff = -1
                         j = j + 1
                 i = i + 1
-        return [[pin, pout] for pin, pout in rules]
+        return rules
 
     
     def print_table(self, table_style=TableStyle.UNICODE, local_src=LocalFlag.BOTH,
