@@ -121,11 +121,19 @@ class Control_diagram:
                     # print(P_ax)
                     # print("ddd")
                     if P_ax != "empty":
+                        # print("P1")
+                        # print(packets)
+                        # print("P2")
+                        # print(annotated_pair["P"])
                         P_x = inverse_t(t_l, P_ax, packets)
-                        tldP_x = inverse_t(t_l, P_ax, annotated_pair["P"])
+                        tldP_x = inverse_t(annotated_pair["t_l"], P_ax, annotated_pair["P"])
+                        # print("P1x")
+                        # print(P_x)
+                        # print("P2x")
+                        # print(tldP_x)
                         print_conflicting_pairs(P_x, tldP_x, transformation, annotated_pair["t"],
                                                 step[0].node_name, P_ax, t_a, annotated_pair["t_a"])
-            step[0].content.append({"P_a" : P_a, "t_l": t_l,  "t_a": t_a, "t": transformation, "P": packets})
+            step[0].content.append({"P_a" : P_a[:], "t_l": t_l,  "t_a": t_a, "t": transformation, "P": packets[:]})
             # if step[0].node_name == "q2":
             #     print(foldl(lambda x, y: x + "\n" + str(y), "", step[0].content))
             # print(t_a)
@@ -912,7 +920,7 @@ def verify(packets, transformation, firewall):
         firewall.insert(packets, transformation, traces[0])
 
 
-def check(semantics, target_system, interfaces):
+def check(rules, target_system, interfaces):
 
     global self_addresses
     # print("\n")
@@ -925,14 +933,11 @@ def check(semantics, target_system, interfaces):
         firewall = PF_firewall()
     
     self_addresses = [dot_to_integer_ip(v[1]) for v in interfaces.values()]
-    accept_rules = semantics.get_rules_no_duplicates()
-    drop_rules = semantics.get_drop_rules_no_duplicates()
-    print_rules(accept_rules, drop_rules)
 
     # checkrules = semantics.get_packets()
     # print_rules([], checkrules)
 
-    for rule in accept_rules + drop_rules:
+    for rule in rules:
         # split based on selfness of addresses
         packets = rule[0]
         transformation = rule[1]
@@ -1036,7 +1041,10 @@ def MC_apply_t(t, P):
     return P1
 
 
-def print_rules(acceptrules, droprules):
+def print_rules(rules):
+    acceptrules = [rule for rule in rules if rule[1] != "DROP"]
+    droprules = [rule for rule in rules if rule[1] == "DROP"]
+
     print_rules_accept(acceptrules)
     print_rules_drop(droprules)
 

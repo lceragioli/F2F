@@ -109,6 +109,59 @@ def normalize_ip(ip):
         return (4294967296 + ip) % 4294967296
     return ip
 
+def int_of_id(s):
+    if s == "id":
+        return s
+    else:
+        return int(s)
+
+def dot_to_int_or_id(s):
+    if s == "id":
+        return s
+    else:
+        return expressivity.dot_to_integer_ip(s)
+
+def parse_table(table):
+    maxrange = [ [0, 4294967295],
+                 [0, 65535],
+                 [0, 4294967295],
+                 [0, 65535],
+                 [0, 255] ]
+    table = table.replace(' ', '')
+
+    lines = table.split("\n")
+    rules = []
+    # dot_to_integer_ip
+
+    for i in range(len(lines)):
+        line = lines[i]
+        fields = line.split(";")
+        if len(fields) < 6:
+            continue
+        packet = [[],[],[],[],[]]
+        for j in range(5):
+            field = fields[j]
+            segments = field.split(",")
+            for segment in segments:
+                values = segment.split("-")
+                if j == 0 or j == 2:
+                    values = [expressivity.dot_to_integer_ip(v) if v != "any" else v for v in values]
+                if len(values) == 1:
+                    if values[0] == "any":
+                        tfield = maxrange[j]
+                    else:
+                        tfield = [int(values[0]), int(values[0])]
+                elif len(values) == 2:
+                    tfield = [int(values[0]), int(values[1])]
+                else:
+                    raise "unlegal value range"
+                packet[j].append(tfield)
+        if fields[5] == "drop":
+            transformation = ("DROP")
+        else:
+            transformation = ({"srcIP": dot_to_int_or_id(fields[5]), "srcPort": int_of_id(fields[6]), "dstIP": dot_to_int_or_id(fields[7]), "dstPort": int_of_id(fields[8])})
+        rules = rules + [[packet, transformation]]
+    return rules
 
 ################################################################################
 # FRONTEND
@@ -496,34 +549,43 @@ def main():
 
     # Argument Processing
     args = parser.parse_args()
-    frontend = import_frontend(args.frontend)
-        
     file_contents = open(args.file).read()
-    diagram_file = os.path.join(os.path.dirname(__file__), frontend.diagram)
 
-    if frontend.interfaces_enabled and not args.interfaces:
+    if not args.interfaces:
         raise RuntimeError(
             "No interfaces file specified! " +
             "The seleced frontend requires the (-i|--interfaces) parameter")
-    interfaces = file_to_dict(args.interfaces) if frontend.interfaces_enabled else {}
+    interfaces = file_to_dict(args.interfaces)
 
     local_addresses = get_local_addresses(interfaces)
-    chain_contents = frontend.language_converter(file_contents, interfaces)
-    firewall = Firewall(name=args.file,
-                        diagram=diagram_file,
-                        chains=chain_contents,
-                        local_addresses=local_addresses)
+
+    if args.frontend == "table":
+        rules = parse_table(file_contents)
+    else:
+        frontend = import_frontend(args.frontend)
+        diagram_file = os.path.join(os.path.dirname(__file__), frontend.diagram)
+
+        chain_contents = frontend.language_converter(file_contents, interfaces)
+        firewall = Firewall(name=args.file,
+                            diagram=diagram_file,
+                            chains=chain_contents,
+                            local_addresses=local_addresses)
+        semantics = firewall.synthesize()
+        accept_rules = semantics.get_rules_no_duplicates()
+        drop_rules = semantics.get_drop_rules_no_duplicates()
+        rules = accept_rules + drop_rules
 
     if args.target not in ["iptables", "pf", "ipfw"]:
         raise RuntimeError(
             "Invalid target language; must be one of iptables, pf or ipfw")
 
-    semantics = firewall.synthesize()
 
     # print("\n")
-    # only for checking
-    # semantics.print_table()
+    # print(rules)
 
-    expressivity.check(semantics, args.target, interfaces)
+    # print("\n")
+    # expressivity.print_rules(rules)
+
+    expressivity.check(rules, args.target, interfaces)
 
 
