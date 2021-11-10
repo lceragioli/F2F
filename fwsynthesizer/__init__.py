@@ -433,24 +433,32 @@ class SynthesisOutput:
                 j = i + 1
                 while j < len(rules):
 
-                    diff = None
+                    all_equal = True
                     for z in range(0, len(rules[i][0])):
                         if rules[i][0][z] != rules[j][0][z]:
-                            if diff is not None:
-                                # print(z)
-                                diff = None
-                                break
-                            diff = z
-                    #  When I make the union, len change and also my position
-                    if diff is not None:
-                        change = True
-                        rules[i][0][diff].sort()
-                        rules[j][0][diff].sort()
-                        union_z = segment_set_union(rules[i][0][diff], rules[j][0][diff])
-                        rules[i][0][diff] = union_z
+                            all_equal = False
+                            break
+                    if all_equal:
                         del rules[j]
                     else:
-                        j = j + 1
+                        diff = None
+                        for z in range(0, len(rules[i][0])):
+                            if rules[i][0][z] != rules[j][0][z]:
+                                if diff is not None:
+                                    # print(z)
+                                    diff = None
+                                    break
+                                diff = z
+                        #  When I make the union, len change and also my position
+                        if diff is not None:
+                            change = True
+                            rules[i][0][diff].sort()
+                            rules[j][0][diff].sort()
+                            union_z = segment_set_union(rules[i][0][diff], rules[j][0][diff])
+                            rules[i][0][diff] = union_z
+                            del rules[j]
+                        else:
+                            j = j + 1
                 i = i + 1
         return rules
 
@@ -588,7 +596,7 @@ def main():
     # print(rules)
 
     # print("\n")
-    # expressivity.print_rules(rules)
+    expressivity.print_rules(rules)
     expressivity.check(rules, args.target, interfaces)
     # b = datetime.datetime.now()
     # c = b - a
