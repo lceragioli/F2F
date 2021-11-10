@@ -13,6 +13,7 @@ import pkgutil
 import importlib
 import frontends
 import expressivity
+import datetime
 
 ################################################################################
 # GLOBALS
@@ -561,6 +562,7 @@ def main():
 
     if args.frontend == "table":
         rules = parse_table(file_contents)
+        # a = datetime.datetime.now()
     else:
         frontend = import_frontend(args.frontend)
         diagram_file = os.path.join(os.path.dirname(__file__), frontend.diagram)
@@ -571,6 +573,8 @@ def main():
                             chains=chain_contents,
                             local_addresses=local_addresses)
         semantics = firewall.synthesize()
+        # a = datetime.datetime.now()
+
         accept_rules = semantics.get_rules_no_duplicates()
         drop_rules = semantics.get_drop_rules_no_duplicates()
         rules = accept_rules + drop_rules
@@ -585,7 +589,8 @@ def main():
 
     # print("\n")
     # expressivity.print_rules(rules)
-
     expressivity.check(rules, args.target, interfaces)
-
+    # b = datetime.datetime.now()
+    # c = b - a
+    # print(c.total_seconds())
 

@@ -132,7 +132,7 @@ class Control_diagram:
                         # print("P2x")
                         # print(tldP_x)
                         print_conflicting_pairs(P_x, tldP_x, transformation, annotated_pair["t"],
-                                                step[0].node_name, P_ax, t_a, annotated_pair["t_a"])
+                                                step[0].node_name, P_ax, t_a, annotated_pair["t_a"], trace[1][0].node_name)
             step[0].content.append({"P_a" : P_a[:], "t_l": t_l,  "t_a": t_a, "t": transformation, "P": packets[:]})
             # if step[0].node_name == "q2":
             #     print(foldl(lambda x, y: x + "\n" + str(y), "", step[0].content))
@@ -482,7 +482,7 @@ def take_one_packet(packets):
     return {"srcIP": packets[0][0][0], "srcPort": packets[1][0][0], "dstIP": packets[2][0][0], "dstPort": packets[3][0][0]}
 
 
-def print_conflicting_pairs(P_x, tldP_x, t, tldt, node_name, P_ax, t_a, tldt_a):
+def print_conflicting_pairs(P_x, tldP_x, t, tldt, node_name, P_ax, t_a, tldt_a, tag_node):
     print("\n\n!!! Conflicting Pairs Found !!!\n")
 
     print("(P1, t1):")
@@ -494,6 +494,7 @@ def print_conflicting_pairs(P_x, tldP_x, t, tldt, node_name, P_ax, t_a, tldt_a):
     print("\nin node " + node_name + ":")
     print("with [P@ || t1@ || t2@]:")
     print_rule_conflict(P_ax, t_a, tldt_a)
+    print("Hint: Apply tags to P1 in node " + tag_node + " and use them to choose the transformation in node " + node_name)
 
 def print_rule(packets, transformation):
     if transformation != "DROP":
