@@ -596,7 +596,7 @@ def main():
     # print(rules)
 
     # print("\n")
-    expressivity.print_rules(rules)
+    # expressivity.print_rules(rules)
     expressivity.check(rules, args.target, interfaces)
     # b = datetime.datetime.now()
     # c = b - a
